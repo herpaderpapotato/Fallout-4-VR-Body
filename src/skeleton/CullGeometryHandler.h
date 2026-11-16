@@ -10,6 +10,15 @@ namespace frik
         // hideAll culls every player geometry (scoped without a provider keeping the body visible), bones stay valid
         void cullPlayerGeometry(bool hideAll = false);
 
+#ifdef FRIK_FLAT // C35: the camera left first person (C23): show again what this handler hid (head gear, face/skin, scope cull)
+        void restoreAll()
+        {
+            _isAllCulled = false;
+            restoreGeometry();
+            restoreEquipment();
+        }
+#endif
+
         // the next cull finds the geometries to hide again instead of using the ones found in the last 2 seconds
         void resetHideGeometryIndexes()
         {

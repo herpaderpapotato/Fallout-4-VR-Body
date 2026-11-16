@@ -350,3 +350,12 @@ havok/
 lib/
 lib_debug/
 xbyak/
+
+# --- FRIK-flat (xmake build) ---
+/.xmake/
+/build/
+/generated/
+__pycache__/
+*.pyc
+*.old-*
+*.copy-*

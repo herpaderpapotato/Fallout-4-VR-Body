@@ -18,7 +18,7 @@ namespace frik
     // Activation-sphere section for the Fallout London VR Attaboy grab gesture.
     constexpr auto CONFIG_SECTION_ATTABOY_GRAB = "FRIK_AttaboyActivationSphere";
 
-    static const auto BASE_PATH = common::getRelativePathInDocuments(R"(\My Games\Fallout4VR\FRIK_Config)");
+    static const auto BASE_PATH = common::getRelativePathInDocuments(R"(\My Games\Fallout4\FRIK-flat\FRIK_Config)" /* FRIK-flat: never the FO4VR install folder */);
     static const auto FRIK_CONFIG_PATH = BASE_PATH + R"(\FRIK.toml)";
     static const auto FRIK_FOLVR_CONFIG_PATH = BASE_PATH + R"(\FRIK_FOLVR.toml)";
     static const auto MESH_HIDE_FACE_INI_PATH = BASE_PATH + R"(\Mesh_Hide\face.ini)";

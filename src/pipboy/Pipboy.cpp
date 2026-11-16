@@ -1,4 +1,6 @@
 #include "Pipboy.h"
+#include "vrshim/Bridge.h" // FRIK-flat C30
+#include "fo4flatvr/FrikBridgeApi.h" // FRIK-flat C30
 
 #include "Config.h"
 #include "FRIK.h"
@@ -19,10 +21,10 @@ namespace
      */
     void turnPipBoyOnOff(const bool open)
     {
-        RE::GetINISetting("fHMDToPipboyScaleOuterAngle:VRPipboy")->SetFloat(open ? 0.0f : 20.0f);
-        RE::GetINISetting("fHMDToPipboyScaleInnerAngle:VRPipboy")->SetFloat(open ? 0.0f : 5.0f);
-        RE::GetINISetting("fPipboyScaleOuterAngle:VRPipboy")->SetFloat(open ? 0.0f : 20.0f);
-        RE::GetINISetting("fPipboyScaleInnerAngle:VRPipboy")->SetFloat(open ? 0.0f : 5.0f);
+        f4vr::getIniSetting( /* FRIK-flat C15: VR-only settings get a fallback, never null */ "fHMDToPipboyScaleOuterAngle:VRPipboy")->SetFloat(open ? 0.0f : 20.0f);
+        f4vr::getIniSetting( /* FRIK-flat C15: VR-only settings get a fallback, never null */ "fHMDToPipboyScaleInnerAngle:VRPipboy")->SetFloat(open ? 0.0f : 5.0f);
+        f4vr::getIniSetting( /* FRIK-flat C15: VR-only settings get a fallback, never null */ "fPipboyScaleOuterAngle:VRPipboy")->SetFloat(open ? 0.0f : 20.0f);
+        f4vr::getIniSetting( /* FRIK-flat C15: VR-only settings get a fallback, never null */ "fPipboyScaleInnerAngle:VRPipboy")->SetFloat(open ? 0.0f : 5.0f);
     }
 
     /**
@@ -93,6 +95,20 @@ namespace frik
         if (_isOpen == open) {
             return;
         }
+
+#ifdef FRIK_FLAT // C30 (user 15 Nov): FRIK's own Pip-Boy opening (look-at / button -> the game's PipboyMenu) fights fo4flatvr's
+        // Pip-Boy panel on flat: suppressed unless fo4flatvr.ini [FRIK] bFrikPipboy=1
+        if (open) {
+            static const bool s_allow = [] {
+                const auto* api = vrshim::bridge::api();
+                return api && api->IniPath && ::GetPrivateProfileIntA("FRIK", "bFrikPipboy", 0, api->IniPath()) != 0;
+            }();
+            if (!s_allow) {
+                logger::sample(10000, "FRIK-flat: FRIK Pip-Boy open suppressed ([FRIK] bFrikPipboy=0)");
+                return;
+            }
+        }
+#endif
 
         if (open && g_config.isFalloutLondonVR && !_attaboyOnBeltNode) {
             // beginning of the game, player doesn't have the attaboy yet (but allow closing if something happens)

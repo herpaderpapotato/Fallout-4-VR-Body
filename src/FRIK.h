@@ -287,6 +287,23 @@ namespace frik
         void broadcastMessage(std::uint32_t messageType, void* data, std::uint32_t dataLen) const;
 
         void smoothMovement();
+#ifdef FRIK_FLAT // C17: smooth movement stepped by fo4flatvr's camera hook (bridge v3), offset handed back
+        bool smoothMovementFlat(float a_offset[3]);
+        void flatBodyDiag(); // C18
+        std::uint64_t _flatFpHandsGen = 0; // C19
+        void flatPropagateNodelessBones(); // C22
+        int _flatNodelessCount = 0;
+        float _flatNodelessMaxErr = 0.0f;
+        std::string _flatNodelessMaxName;
+        std::vector<RE::NiPoint3> _flatEndOfFrame;
+        float _flatBetweenMax = 0.0f, _flatBetweenRoot = 0.0f;
+        int _flatBetweenCount = 0;
+        std::string _flatBetweenName;
+        bool _flatSkinActive = false; // C23
+        void flatTransferLegHelpers(); // C28
+        std::vector<RE::NiTransform> _flatEngineLocal;
+        int _flatLegHelpers = 0;
+#endif
 
     protected:
         virtual void onModLoaded(const F4SE::LoadInterface* f4SE) override;

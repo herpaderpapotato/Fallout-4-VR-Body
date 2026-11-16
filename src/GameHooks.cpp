@@ -24,6 +24,12 @@ namespace
      */
     bool verifyPatchBytes(const std::string_view name, const std::uintptr_t address, const std::uint8_t* expected, const std::size_t count)
     {
+#ifdef FRIK_FLAT // C4: an address with no flat counterpart is 0 - skip the patch instead of reading address 0
+        if (!vrshim::inGameImage(address)) {
+            logger::warn("Skip patch '{}': no flat 1.11.240 address", name);
+            return false;
+        }
+#endif
         const auto actual = reinterpret_cast<const std::uint8_t*>(address);
         if (std::equal(expected, expected + count, actual)) {
             return true;
@@ -47,6 +53,12 @@ namespace
      */
     bool verifyCallSite(const std::string_view name, const std::uintptr_t address, const std::uintptr_t expectedTarget)
     {
+#ifdef FRIK_FLAT // C4
+        if (!vrshim::inGameImage(address) || !vrshim::inGameImage(expectedTarget)) {
+            logger::warn("Skip hook '{}': no flat 1.11.240 address (site 0x{:X}, target 0x{:X})", name, address, expectedTarget);
+            return false;
+        }
+#endif
         const auto bytes = reinterpret_cast<const std::uint8_t*>(address);
         if (bytes[0] != 0xE8) {
             logger::error("Skip hook '{}' at 0x{:X}: found [{}], not a CALL", name, address, bytesToHex(bytes, 5));
@@ -167,16 +179,16 @@ namespace
 
 namespace
 {
-    REL::Offset invJumpFrom(0x2567664);
-    REL::Offset invJumpTo(0x256766a);
+    vrshim::FlatOffset invJumpFrom(0x2567664) /* FRIK-flat C4 */;
+    vrshim::FlatOffset invJumpTo(0x256766a) /* FRIK-flat C4 */;
 
-    REL::Offset lockForRead_branch(0x1b932f8);
-    REL::Offset lockForRead_return(0x1b932fd);
+    vrshim::FlatOffset lockForRead_branch(0x1b932f8) /* FRIK-flat C4 */;
+    vrshim::FlatOffset lockForRead_return(0x1b932fd) /* FRIK-flat C4 */;
 
-    REL::Offset shaderEffectPatch(0x28d323a);
-    REL::Offset shaderEffectCall(0x2813560);
-    REL::Offset shaderEffectContinue(0x28d323f);
-    REL::Offset shaderEffectReturn(0x28d4ec8);
+    vrshim::FlatOffset shaderEffectPatch(0x28d323a) /* FRIK-flat C4 */;
+    vrshim::FlatOffset shaderEffectCall(0x2813560) /* FRIK-flat C4 */;
+    vrshim::FlatOffset shaderEffectContinue(0x28d323f) /* FRIK-flat C4 */;
+    vrshim::FlatOffset shaderEffectReturn(0x28d4ec8) /* FRIK-flat C4 */;
 
     void patchInventoryInfBug()
     {
@@ -204,7 +216,7 @@ namespace
         const PatchShortVar code(buf);
 
         // Patch original code to jump to our patch
-        F4SE::GetTrampoline().write_branch<6>(invJumpFrom.address(), std::uintptr_t(code.getCode()));
+        F4SE::GetTrampoline().write_jmp<6>(invJumpFrom.address(), std::uintptr_t(code.getCode()));
         logger::debug("Patched InventoryInfBug at 0x{:X}, size:{}", invJumpFrom.address(), code.getSize());
     }
 
@@ -234,7 +246,7 @@ namespace
         const PatchMoreMask code(buf);
 
         // Patch original code to jump to our patch
-        F4SE::GetTrampoline().write_branch<5>(lockForRead_branch.address(), std::uintptr_t(code.getCode()));
+        F4SE::GetTrampoline().write_jmp<5>(lockForRead_branch.address(), std::uintptr_t(code.getCode()));
         logger::debug("Patched LockForReadMask at 0x{:X}, size:{}", lockForRead_branch.address(), code.getSize());
     }
 
@@ -274,21 +286,25 @@ namespace
         const PatchMissingR15 code(buf);
 
         // Patch original code to jump to our patch
-        F4SE::GetTrampoline().write_branch<5>(shaderEffectPatch.address(), std::uintptr_t(code.getCode()));
+        F4SE::GetTrampoline().write_jmp<5>(shaderEffectPatch.address(), std::uintptr_t(code.getCode()));
         logger::debug("Patched PipeGunScopeCrash at 0x{:X}, size:{}", shaderEffectPatch.address(), code.getSize());
     }
 
     void patchBody()
     {
         // For new game
-        const auto patchAddress = REL::Offset(0xF08D5B).address();
+        const auto patchAddress = vrshim::FlatOffset(0xF08D5B).address();
         if (verifyPatchBytes("body new game", patchAddress, { 0x75 })) {
             REL::safe_write(patchAddress, static_cast<uint8_t>(0x74));
         }
 
         // now for existing games to update
-        const auto patchAddress2 = REL::Offset(0xf29ac8).address();
+        const auto patchAddress2 = vrshim::FlatOffset(0xf29ac8).address();
+#ifdef FRIK_FLAT // flat DoShow1stPerson D78CFE: movzx edx, r15b (VR: r14b); same xor edx,edx replacement
+        if (verifyPatchBytes("body existing game", patchAddress2, { 0x41, 0x0F, 0xB6, 0xD7 })) {
+#else
         if (verifyPatchBytes("body existing game", patchAddress2, { 0x41, 0x0F, 0xB6, 0xD6 })) {
+#endif
             REL::safe_write(patchAddress2, 0x9090D231); // This was movzx EDX,R14B.   Want to just zero out EDX with an xor instead
         }
 
@@ -312,7 +328,7 @@ namespace frik::hook
             trampoline.write_call<5>(f4vr::hook_smoothMovementHook.address(), &hookSmoothMovement);
         }
         // the engine's two first-person arm placements in its per-frame update (Weapon, then WeaponLeft)
-        for (const auto site : { REL::Offset(0xef6108).address(), REL::Offset(0xef614b).address() }) {
+        for (const auto site : { vrshim::FlatOffset(0xef6108).address(), vrshim::FlatOffset(0xef614b).address() }) {
             if (verifyCallSite("update1stPersonArm", site, f4vr::Update1StPersonArm.address())) {
                 trampoline.write_call<5>(site, &hookUpdate1stPersonArm);
             }

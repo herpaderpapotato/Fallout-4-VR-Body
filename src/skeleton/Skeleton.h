@@ -108,6 +108,15 @@ namespace frik
             _cullGeometry.resetHideGeometryIndexes();
         }
 
+#ifdef FRIK_FLAT // C35
+        // the view is not at the player's head any more (camera state other than first person / iron sights): the head gear,
+        // face and skin geometry this skeleton's cull hid are shown again (FRIK culls them only for the first-person view)
+        void restoreCulledGeometry()
+        {
+            _cullGeometry.restoreAll();
+        }
+#endif
+
         void onFrameUpdate();
 
     private:

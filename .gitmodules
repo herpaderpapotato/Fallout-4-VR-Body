@@ -1,3 +1,6 @@
 [submodule "external/F4VR-CommonFramework"]
     path = external/F4VR-CommonFramework
-    url = https://github.com/ArthurHub/F4VR-CommonFramework.git
+	url = https://github.com/herpaderpapotato/F4VR-CommonFramework.git
+[submodule "external/commonlibf4"]
+	path = external/commonlibf4
+	url = https://github.com/herpaderpapotato/commonlibf4.git

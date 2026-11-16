@@ -89,8 +89,13 @@ namespace frik
             return false;
         }
 
+#ifdef FRIK_FLAT // C19: real first-person hands or stand-ins (vrshim::selectFpHands)
+        _rightHand = vrshim::fpHands().rHand;
+        _leftHand = vrshim::fpHands().lHand;
+#else
         _rightHand = findNode(fpSkeleton, "RArm_Hand");
         _leftHand = findNode(fpSkeleton, "LArm_Hand");
+#endif
         if (!_rightHand || !_leftHand) {
             logger::warn("Skeleton initialization failed: missing first-person hand nodes. right={} left={}",
                 static_cast<const void*>(_rightHand),
@@ -1018,8 +1023,13 @@ namespace frik
 
         RE::NiNode* rightWeapon = getWeaponNode();
         RE::NiNode* leftWeapon = _playerNodes->weaponLeftNode;
+#ifdef FRIK_FLAT // C19
+        const auto rHand = vrshim::fpHands().rHand;
+        const auto lHand = vrshim::fpHands().lHand;
+#else
         const auto rHand = findNode(getFirstPersonSkeleton(), "RArm_Hand");
         const auto lHand = findNode(getFirstPersonSkeleton(), "LArm_Hand");
+#endif
 
         if (!rightWeapon || !rHand || !leftWeapon || !lHand) {
             logger::sample("Cannot set up weapon nodes for left-handed mode switch");
@@ -1120,6 +1130,11 @@ namespace frik
     {
         const bool ownedExternally = weaponNode == getWeaponNode() && g_externalAuthority.isPrimaryWeaponNodeOwnershipBlocked();
         const RE::NiTransform ownerLocal = weaponNode->local;
+#ifdef FRIK_FLAT // C29: the weapon local FRIK's weapon adjuster left last frame (per-weapon JSON offset: weapon in the hand)
+        if (weaponNode == getWeaponNode()) {
+            vrshim::setPrimaryWeaponInHand(weaponNode->local, !isUnarmedWeaponDrawn());
+        }
+#endif
 
         weaponNode->local.rotate = !isLeftHandedMode() ? MatrixUtils::getMatrix(-0.122f, 0.987f, 0.100f, 0.990f, 0.114f, 0.081f, 0.069f, 0.109f, -0.992f)
                                                        : MatrixUtils::getMatrix(-0.122f, 0.987f, 0.100f, -0.990f, -0.114f, -0.081f, -0.069f, -0.109f, 0.992f);
@@ -1132,7 +1147,11 @@ namespace frik
                                       : isLeft           ? RE::NiPoint3(0, 0, 0)
                                                          : RE::NiPoint3(4.389f, -1.899f, -3.133f);
 
+#ifdef FRIK_FLAT // C14: VR engine function EF6280 has no flat counterpart
+        vrshim::update1stPersonArm(RE::PlayerCharacter::GetSingleton(), &weaponNode, &offsetNode);
+#else
         Update1StPersonArm(RE::PlayerCharacter::GetSingleton(), &weaponNode, &offsetNode);
+#endif
 
         if (ownedExternally) {
             weaponNode->local = ownerLocal;

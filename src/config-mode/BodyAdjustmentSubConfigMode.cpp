@@ -31,7 +31,7 @@ namespace
 
     void updateVRScaleGameConfig()
     {
-        const auto set = RE::GetINISetting("fVrScale:VR");
+        const auto set = f4vr::getIniSetting( /* FRIK-flat C15: VR-only settings get a fallback, never null */ "fVrScale:VR");
         set->SetFloat(frik::g_config.fVrScale);
     }
 }

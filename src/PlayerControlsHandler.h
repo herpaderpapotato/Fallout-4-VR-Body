@@ -32,8 +32,14 @@ namespace frik
     inline PlayerControlsHandler::PlayerControlsHandler()
     {
         // most disabled, leave some enabled that either needed (fast travel) or reported with bugs staying disabled
+#ifdef FRIK_FLAT // C10: flat enums have no operator|
+        _disableFlags.set(static_cast<RE::UserEvents::USER_EVENT_FLAG>(std::to_underlying(RE::OtherInputEvents::OTHER_EVENT_FLAG::kFastTravel) |
+                                                                       std::to_underlying(RE::OtherInputEvents::OTHER_EVENT_FLAG::kRunning) |
+                                                                       std::to_underlying(RE::OtherInputEvents::OTHER_EVENT_FLAG::kSprinting)));
+#else
         _disableFlags.set(static_cast<RE::UserEvents::USER_EVENT_FLAG>(
             RE::OtherInputEvents::OTHER_EVENT_FLAG::kFastTravel | RE::OtherInputEvents::OTHER_EVENT_FLAG::kRunning | RE::OtherInputEvents::OTHER_EVENT_FLAG::kSprinting));
+#endif
     }
 
     /**

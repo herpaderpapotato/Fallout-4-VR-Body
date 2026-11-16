@@ -69,6 +69,9 @@ namespace frik
     void SmoothMovementVR::onFrameUpdate()
     {
         F4CF_PERF_FUNCTION();
+#ifdef FRIK_FLAT // C17
+        _flatOffset = zeroPoint();
+#endif
 
         if (g_config.disableSmoothMovement) {
             return;
@@ -143,6 +146,9 @@ namespace frik
                 _lastAppliedLocalY);
         } else {
             playerLocalTransformPos = newPos - curPos;
+#ifdef FRIK_FLAT // C17
+            _flatOffset = playerLocalTransformPos;
+#endif
             _lastAppliedLocalX = playerLocalTransformPos.x;
             _lastAppliedLocalY = playerLocalTransformPos.y;
         }
