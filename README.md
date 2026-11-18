@@ -1,5 +1,7 @@
 # Fallout 4 VR Body - FRIK
 
+This is just here to make https://github.com/herpaderpapotato/Fallout-4-Flat-2-VR work.
+
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
