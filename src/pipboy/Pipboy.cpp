@@ -1,6 +1,6 @@
 #include "Pipboy.h"
-#include "fo4flatvr/FrikBridgeApi.h" // FRIK-flat C30
 #include "vrshim/Bridge.h" // FRIK-flat C30
+#include "fo4flatvr/FrikBridgeApi.h" // FRIK-flat C30
 
 #include "Config.h"
 #include "FRIK.h"
@@ -21,10 +21,10 @@ namespace
      */
     void turnPipBoyOnOff(const bool open)
     {
-        f4vr::getIniSetting(/* FRIK-flat C15: VR-only settings get a fallback, never null */ "fHMDToPipboyScaleOuterAngle:VRPipboy")->SetFloat(open ? 0.0f : 20.0f);
-        f4vr::getIniSetting(/* FRIK-flat C15: VR-only settings get a fallback, never null */ "fHMDToPipboyScaleInnerAngle:VRPipboy")->SetFloat(open ? 0.0f : 5.0f);
-        f4vr::getIniSetting(/* FRIK-flat C15: VR-only settings get a fallback, never null */ "fPipboyScaleOuterAngle:VRPipboy")->SetFloat(open ? 0.0f : 20.0f);
-        f4vr::getIniSetting(/* FRIK-flat C15: VR-only settings get a fallback, never null */ "fPipboyScaleInnerAngle:VRPipboy")->SetFloat(open ? 0.0f : 5.0f);
+        f4vr::getIniSetting( /* FRIK-flat C15: VR-only settings get a fallback, never null */ "fHMDToPipboyScaleOuterAngle:VRPipboy")->SetFloat(open ? 0.0f : 20.0f);
+        f4vr::getIniSetting( /* FRIK-flat C15: VR-only settings get a fallback, never null */ "fHMDToPipboyScaleInnerAngle:VRPipboy")->SetFloat(open ? 0.0f : 5.0f);
+        f4vr::getIniSetting( /* FRIK-flat C15: VR-only settings get a fallback, never null */ "fPipboyScaleOuterAngle:VRPipboy")->SetFloat(open ? 0.0f : 20.0f);
+        f4vr::getIniSetting( /* FRIK-flat C15: VR-only settings get a fallback, never null */ "fPipboyScaleInnerAngle:VRPipboy")->SetFloat(open ? 0.0f : 5.0f);
     }
 
     /**

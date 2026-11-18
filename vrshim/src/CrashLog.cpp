@@ -4,8 +4,8 @@
 // returns EXCEPTION_CONTINUE_SEARCH, so the process behaves exactly as without it.
 #include "vrshim/FlatCompat.h"
 
-#include <DbgHelp.h>
 #include <Windows.h>
+#include <DbgHelp.h>
 
 #include <atomic>
 #include <cstdio>
@@ -22,8 +22,9 @@ namespace vrshim
         std::string Describe(const DWORD64 a_addr)
         {
             HMODULE mod = nullptr;
-            char path[MAX_PATH]{};
-            if (::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, reinterpret_cast<LPCSTR>(a_addr), &mod) && mod) {
+            char    path[MAX_PATH]{};
+            if (::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    reinterpret_cast<LPCSTR>(a_addr), &mod) && mod) {
                 ::GetModuleFileNameA(mod, path, MAX_PATH);
             }
             const char* name = path[0] ? std::strrchr(path, '\\') : nullptr;
@@ -37,7 +38,7 @@ namespace vrshim
             if (::SymFromAddr(::GetCurrentProcess(), a_addr, &disp, sym)) {
                 out += std::format(" {}+0x{:X}", sym->Name, disp);
                 IMAGEHLP_LINE64 line{ sizeof(IMAGEHLP_LINE64) };
-                DWORD ld = 0;
+                DWORD           ld = 0;
                 if (::SymGetLineFromAddr64(::GetCurrentProcess(), a_addr, &ld, &line)) {
                     const char* f = std::strrchr(line.FileName, '\\');
                     out += std::format(" ({}:{})", f ? f + 1 : line.FileName, line.LineNumber);
@@ -49,8 +50,8 @@ namespace vrshim
         LONG CALLBACK Handler(EXCEPTION_POINTERS* a_ep)
         {
             const DWORD code = a_ep->ExceptionRecord->ExceptionCode;
-            if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION && code != STATUS_STACK_BUFFER_OVERRUN && code != EXCEPTION_INT_DIVIDE_BY_ZERO &&
-                code != EXCEPTION_PRIV_INSTRUCTION) {
+            if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION && code != STATUS_STACK_BUFFER_OVERRUN &&
+                code != EXCEPTION_INT_DIVIDE_BY_ZERO && code != EXCEPTION_PRIV_INSTRUCTION) {
                 return EXCEPTION_CONTINUE_SEARCH;
             }
             if (g_logged.fetch_add(1) >= 3) {
@@ -65,24 +66,22 @@ namespace vrshim
             const auto* rec = a_ep->ExceptionRecord;
             std::string info;
             if (code == EXCEPTION_ACCESS_VIOLATION && rec->NumberParameters >= 2) {
-                info = std::format(" ({} 0x{:X})", rec->ExceptionInformation[0] == 0 ? "read" : rec->ExceptionInformation[0] == 1 ? "write" : "exec", rec->ExceptionInformation[1]);
+                info = std::format(" ({} 0x{:X})", rec->ExceptionInformation[0] == 0 ? "read" : rec->ExceptionInformation[0] == 1 ? "write" : "exec",
+                    rec->ExceptionInformation[1]);
             }
-            spdlog::critical("FRIK-flat CRASH(first chance) code 0x{:08X}{} at {} thread {}",
-                code,
-                info,
-                Describe(reinterpret_cast<DWORD64>(rec->ExceptionAddress)),
+            spdlog::critical("FRIK-flat CRASH(first chance) code 0x{:08X}{} at {} thread {}", code, info, Describe(reinterpret_cast<DWORD64>(rec->ExceptionAddress)),
                 ::GetCurrentThreadId());
             CONTEXT ctx = *a_ep->ContextRecord;
             for (int i = 0; i < 24 && ctx.Rip; ++i) {
                 spdlog::critical("  #{:02} {}", i, Describe(ctx.Rip));
                 DWORD64 base = 0;
-                auto* fe = ::RtlLookupFunctionEntry(ctx.Rip, &base, nullptr);
-                if (!fe) { // leaf function: return address at [rsp]
+                auto*   fe = ::RtlLookupFunctionEntry(ctx.Rip, &base, nullptr);
+                if (!fe) {  // leaf function: return address at [rsp]
                     ctx.Rip = *reinterpret_cast<DWORD64*>(ctx.Rsp);
                     ctx.Rsp += 8;
                     continue;
                 }
-                void* handlerData = nullptr;
+                void*   handlerData = nullptr;
                 DWORD64 frame = 0;
                 ::RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, ctx.Rip, fe, &ctx, &handlerData, &frame, nullptr);
             }

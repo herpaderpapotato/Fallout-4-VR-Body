@@ -26,36 +26,25 @@ namespace vrshim::skin
 
         struct Shadow
         {
-            std::vector<RE::NiTransform*> orig; // the engine's pointers (bone worlds)
-            std::vector<RE::NiTransform> copy; // what the render reads instead
+            std::vector<RE::NiTransform*> orig;    // the engine's pointers (bone worlds)
+            std::vector<RE::NiTransform>  copy;    // what the render reads instead
         };
-
         std::unordered_map<void*, Shadow> g_shadows;
-        Stats g_stats;
+        Stats                             g_stats;
 
-        RE::NiTransform** Data(void* a_inst)
-        {
-            return *reinterpret_cast<RE::NiTransform***>(static_cast<std::uint8_t*>(a_inst) + kWtData);
-        }
-
-        std::uint32_t Count(void* a_inst)
-        {
-            return *reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(a_inst) + kWtCount);
-        }
+        RE::NiTransform** Data(void* a_inst) { return *reinterpret_cast<RE::NiTransform***>(static_cast<std::uint8_t*>(a_inst) + kWtData); }
+        std::uint32_t     Count(void* a_inst) { return *reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(a_inst) + kWtCount); }
 
         void Collect(RE::NiAVObject* a_obj, std::vector<void*>& a_out, int a_depth)
         {
-            if (!a_obj || a_depth < 0)
-                return;
+            if (!a_obj || a_depth < 0) return;
             if (auto* geom = a_obj->IsGeometry()) {
-                if (geom->skinInstance)
-                    a_out.push_back(geom->skinInstance.get());
+                if (geom->skinInstance) a_out.push_back(geom->skinInstance.get());
                 return;
             }
             if (auto* node = a_obj->IsNode()) {
                 for (auto& c : node->children) {
-                    if (c)
-                        Collect(c.get(), a_out, a_depth - 1);
+                    if (c) Collect(c.get(), a_out, a_depth - 1);
                 }
             }
         }
@@ -68,17 +57,15 @@ namespace vrshim::skin
         std::unordered_set<void*> seen;
         g_stats.instances = 0, g_stats.bones = 0;
         for (void* inst : insts) {
-            if (!seen.insert(inst).second)
-                continue;
+            if (!seen.insert(inst).second) continue;
             const std::uint32_t n = Count(inst);
-            RE::NiTransform** wt = Data(inst);
-            if (!wt || n == 0 || n > 1024)
-                continue;
+            RE::NiTransform**   wt = Data(inst);
+            if (!wt || n == 0 || n > 1024) continue;
             auto& sh = g_shadows[inst];
-            bool rebuild = sh.copy.size() != n;
+            bool  rebuild = sh.copy.size() != n;
             if (!rebuild) {
                 for (std::uint32_t i = 0; i < n; ++i) {
-                    if (wt[i] != &sh.copy[i]) { // set up again by the engine (attach / re-equip): take its pointers anew
+                    if (wt[i] != &sh.copy[i]) {  // set up again by the engine (attach / re-equip): take its pointers anew
                         rebuild = true;
                         break;
                     }
@@ -97,12 +84,10 @@ namespace vrshim::skin
                 ++g_stats.rebuilds;
             }
             for (std::uint32_t i = 0; i < n; ++i) {
-                if (sh.orig[i])
-                    sh.copy[i] = *sh.orig[i];
+                if (sh.orig[i]) sh.copy[i] = *sh.orig[i];
             }
             for (std::uint32_t i = 0; i < n; ++i) {
-                if (sh.orig[i])
-                    wt[i] = &sh.copy[i];
+                if (sh.orig[i]) wt[i] = &sh.copy[i];
             }
             ++g_stats.instances;
             g_stats.bones += n;
@@ -116,27 +101,20 @@ namespace vrshim::skin
     void restore(RE::NiAVObject* a_root)
     {
         std::vector<void*> insts;
-        if (a_root)
-            Collect(a_root, insts, 24);
+        if (a_root) Collect(a_root, insts, 24);
         std::unordered_set<void*> live(insts.begin(), insts.end());
         for (auto& [inst, sh] : g_shadows) {
-            if (!live.contains(inst))
-                continue; // not under the root any more: may be freed, leave it
+            if (!live.contains(inst)) continue;  // not under the root any more: may be freed, leave it
             const std::uint32_t n = Count(inst);
-            RE::NiTransform** wt = Data(inst);
-            if (!wt || n != sh.orig.size())
-                continue;
+            RE::NiTransform**   wt = Data(inst);
+            if (!wt || n != sh.orig.size()) continue;
             for (std::uint32_t i = 0; i < n; ++i) {
-                if (sh.orig[i] && wt[i] == &sh.copy[i])
-                    wt[i] = sh.orig[i];
+                if (sh.orig[i] && wt[i] == &sh.copy[i]) wt[i] = sh.orig[i];
             }
         }
         g_shadows.clear();
         g_stats.instances = 0, g_stats.bones = 0;
     }
 
-    const Stats& stats() noexcept
-    {
-        return g_stats;
-    }
+    const Stats& stats() noexcept { return g_stats; }
 }

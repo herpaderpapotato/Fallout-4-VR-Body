@@ -1,6 +1,6 @@
 // FRIK-flat: implementation of vrshim/FlatCompat.h (address table lookups, log directory).
-#include <ShlObj.h>
 #include <Windows.h>
+#include <ShlObj.h>
 
 #include <algorithm>
 #include <atomic>
@@ -22,10 +22,10 @@ namespace vrshim
         struct Lookup
         {
             std::uint64_t vr;
-            bool isId;
+            bool          isId;
             std::uint64_t flat;
-            AddrStatus status;
-            const char* where;
+            AddrStatus    status;
+            const char*   where;
         };
 
         // function-local static: lookups run from other translation units' static initialisers
@@ -34,7 +34,6 @@ namespace vrshim
             static std::mutex m;
             return m;
         }
-
         std::vector<Lookup>& lookups()
         {
             static std::vector<Lookup> v;
@@ -68,9 +67,7 @@ namespace vrshim
         try {
             std::scoped_lock l(lock());
             auto& v = lookups();
-            const auto it = std::ranges::find_if(v, [&](const Lookup& x) {
-                return x.vr == a_vr && x.isId == a_isId;
-            });
+            const auto it = std::ranges::find_if(v, [&](const Lookup& x) { return x.vr == a_vr && x.isId == a_isId; });
             if (it == v.end()) {
                 v.push_back({ a_vr, a_isId, flat, hit ? hit->status : AddrStatus::kUnresolved, hit ? hit->name : a_where });
             }
@@ -83,9 +80,8 @@ namespace vrshim
     {
         static const std::uintptr_t stub = [] {
             auto* p = static_cast<std::uint8_t*>(::VirtualAlloc(nullptr, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
-            if (!p)
-                return std::uintptr_t{ 0 };
-            static constexpr std::uint8_t code[] = { 0x33, 0xC0, 0x0F, 0x57, 0xC0, 0xC3 }; // xor eax,eax; xorps xmm0,xmm0; ret
+            if (!p) return std::uintptr_t{ 0 };
+            static constexpr std::uint8_t code[] = { 0x33, 0xC0, 0x0F, 0x57, 0xC0, 0xC3 };  // xor eax,eax; xorps xmm0,xmm0; ret
             std::memcpy(p, code, sizeof(code));
             DWORD old = 0;
             ::VirtualProtect(p, 4096, PAGE_EXECUTE_READ, &old);
@@ -106,7 +102,7 @@ namespace vrshim
         if (rva) {
             return imageBase() + rva;
         }
-        bool code = a_isId; // every id used here names a function
+        bool code = a_isId;  // every id used here names a function
         for (const auto& e : TABLE) {
             if (e.vr == a_vr && e.isId == a_isId) {
                 code = e.isCode;
@@ -180,7 +176,7 @@ std::uintptr_t REL::Module::base() const noexcept
 
 REL::Version REL::Module::version() const noexcept
 {
-    return F4SE::RUNTIME_LATEST; // the plugin only loads on the runtime the flat CommonLibF4 targets (1.11.240)
+    return F4SE::RUNTIME_LATEST;  // the plugin only loads on the runtime the flat CommonLibF4 targets (1.11.240)
 }
 
 void vrshim::niAVObjectUpdate(RE::NiAVObject* a_object, RE::NiUpdateData& a_data)

@@ -3,8 +3,8 @@
 #include "FRIK.h"
 
 #ifdef FRIK_FLAT
-#include "fo4flatvr/FrikBridgeApi.h"
 #include "vrshim/Bridge.h"
+#include "fo4flatvr/FrikBridgeApi.h"
 
 #include <cmath>
 #endif
@@ -23,14 +23,13 @@ namespace frik
         // wrist roll (yaw); otherwise it stays where it was put, in the world.
         struct FlatSelfie
         {
-            bool reqActive = false; // last bridge request
+            bool     reqActive = false;  // last bridge request
             unsigned reqSeq = 0;
-            bool anchorValid = false;
-            float anchor[2]{}; // world x, y (game units)
-            float facing[2]{ 0, 1 }; // body forward at placement (toward the camera), world xy unit
-            float yaw = 0;
+            bool     anchorValid = false;
+            float    anchor[2]{};        // world x, y (game units)
+            float    facing[2]{ 0, 1 };  // body forward at placement (toward the camera), world xy unit
+            float    yaw = 0;
         };
-
         FlatSelfie g_flatSelfie;
 
         // true = the flat placement ran (skip FRIK's FO4VR basicSelfie)
@@ -60,10 +59,10 @@ namespace frik
             }
             if (!g_frik.isSelfieModeOn()) {
                 st.anchorValid = false;
-                return true; // nothing to place (FRIK's basicSelfie returns too)
+                return true;  // nothing to place (FRIK's basicSelfie returns too)
             }
             if (!(have && st.reqActive)) {
-                st.yaw = 0; // FRIK's own toggle: no steering
+                st.yaw = 0;  // FRIK's own toggle: no steering
             }
             const auto root = f4vr::getRootNode();
             const auto cam = f4vr::getPlayerCamera();
@@ -72,7 +71,7 @@ namespace frik
             }
             const auto& cw = cam->cameraRoot->world;
             if (follow || !st.anchorValid) {
-                float fx = cw.rotate.entry[1][0], fy = cw.rotate.entry[1][1]; // camera forward (row 1), horizontal
+                float fx = cw.rotate.entry[1][0], fy = cw.rotate.entry[1][1];  // camera forward (row 1), horizontal
                 const float l = std::sqrt(fx * fx + fy * fy);
                 if (l < 1e-3f) {
                     return true;
@@ -97,7 +96,7 @@ namespace frik
             w.entry[1][0] = f0, w.entry[1][1] = f1, w.entry[1][2] = 0;
             w.entry[2][0] = 0, w.entry[2][1] = 0, w.entry[2][2] = 1;
             const auto body = root->parent;
-            const float z = root->local.translate.z; // the skeleton's own height under its parent (as basicSelfie)
+            const float z = root->local.translate.z;  // the skeleton's own height under its parent (as basicSelfie)
             root->local.rotate = w * body->world.rotate.Transpose();
             // world -> parent local: local = parent.rotate * (world - parent.translate) / scale (FRIK's convention)
             const RE::NiPoint3 delta(st.anchor[0] - body->world.translate.x, st.anchor[1] - body->world.translate.y, 0.0f);

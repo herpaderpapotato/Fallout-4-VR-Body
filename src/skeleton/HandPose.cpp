@@ -443,11 +443,11 @@ namespace frik
     HandPose::HandPoseSource HandPose::resolveHandPoseSource(const bool isLeft)
     {
         const bool isPrimaryHand = isLeft == isLeftHandedMode();
-        const bool shouldUseWeaponPoseForPrimaryHand = isWeaponDrawn() && !g_externalAuthority.isPrimaryWeaponPoseBlocked() &&
-                                                       (isLeftHandedMode() || !g_frik.isPipboyOperatingWithFinger())
+        const bool shouldUseWeaponPoseForPrimaryHand =
+            isWeaponDrawn() && !g_externalAuthority.isPrimaryWeaponPoseBlocked() && (isLeftHandedMode() || !g_frik.isPipboyOperatingWithFinger())
 #ifdef FRIK_FLAT // C29 (user 15 Nov: empty right hand perpetually a fist): with fists drawn the hand follows the controller's
-                                                       // fingers (grip/trigger) like an empty hand instead of copying the first-person unarmed animation's fist
-                                                       && !isUnarmedWeaponDrawn()
+                 // fingers (grip/trigger) like an empty hand instead of copying the first-person unarmed animation's fist
+            && !isUnarmedWeaponDrawn()
 #endif
             ;
 
