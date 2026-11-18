@@ -23,7 +23,7 @@
 #include "vrcf/VRControllersManager.h"
 #include "vrui/UIManager.h"
 #include "vrshim/Bridge.h" // FRIK-flat C12
-#include "../../plugin/src/plugin/FrikBridgeApi.h" // FRIK-flat selfie test flag
+#include "fo4flatvr/FrikBridgeApi.h" // FRIK-flat selfie test flag
 #include "vrshim/VrNodes.h" // FRIK-flat C17
 #include "vrshim/XfMath.h" // FRIK-flat C22
 #include "vrshim/StableSkin.h" // FRIK-flat C23

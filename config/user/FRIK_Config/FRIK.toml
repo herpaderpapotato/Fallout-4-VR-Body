@@ -38,7 +38,7 @@
 bHidePlayerHead = false
 
 # Hide Equipment geometry by name (values in FRIK_Mesh_Hide\slots.ini)
-bHidePlayerHeadEquipment = true
+bHidePlayerHeadEquipment = false
 
 # Hide skin/clothes geometry by name (values in FRIK_Mesh_Hide\skins.ini)
 bHidePlayerSkin = false
