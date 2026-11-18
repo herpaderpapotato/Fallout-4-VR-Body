@@ -4,12 +4,16 @@
 
 struct FO4FlatVR_Frame;
 struct FO4FlatVR_FrikBridge;
+struct FO4FlatVR_Selfie;
 
 namespace vrshim::bridge
 {
     // F4SEPlugin_Load, before anything else: finds fo4flatvr.dll's FO4FLATVR_GetFrikBridge. False = stay dormant.
     bool connect() noexcept;
     [[nodiscard]] const FO4FlatVR_FrikBridge* api() noexcept;
+
+    // Bridge v4 (16 Nov): fo4flatvr's VRIK-style selfie request (both hands up; Gestures.h). False = none (older fo4flatvr).
+    bool selfie(FO4FlatVR_Selfie& a_out) noexcept;
 
     // After the framework's load succeeded: logs the address report line and tells fo4flatvr FRIK-flat is active.
     void onLoaded();
@@ -38,6 +42,13 @@ namespace vrshim::bridge
     [[nodiscard]] bool                   valid() noexcept;
     [[nodiscard]] bool                   leftHanded() noexcept;
     [[nodiscard]] std::uint64_t          frameCount() noexcept;
+
+    // 16 Nov: the frame being run is a pause-time frame (UI::menuMode != 0: no player update, no animation, no floating-gun
+    // placement this frame; fo4flatvr calls the frame callback from Main::OnIdle C33E62 then, [FRIK] bPausedFrame). Set by frameUpdate.
+    [[nodiscard]] bool pausedFrame() noexcept;
+
+    // fo4flatvr.ini [FRIK] integer key (a_def when the key or the ini is missing). Any thread.
+    [[nodiscard]] int iniInt(const char* a_key, int a_def) noexcept;
 
     // C32 diag: the raw controller grip of the last frameUpdate in world (camera . grip-in-head, no wand calibration), side 0 left
     // 1 right; rotation in NiTransform storage (a_rot[i] = local axis i in world). False when that side had no valid grip.

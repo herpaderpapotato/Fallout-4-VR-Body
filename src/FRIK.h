@@ -303,6 +303,24 @@ namespace frik
         void flatTransferLegHelpers(); // C28
         std::vector<RE::NiTransform> _flatEngineLocal;
         int _flatLegHelpers = 0;
+        // C37: per bone of the third-person tree, what the engine's animation gave it vs what FRIK wrote (FRIK.cpp flatTrack*)
+        struct FlatBoneTrack
+        {
+            RE::NiTransform base;      // local when first person began (the engine's, before FRIK's first write)
+            RE::NiTransform anim;      // the engine's latest pose (base while the engine never rewrote it)
+            RE::NiTransform written;   // local FRIK left at the end of its last frame
+            bool            hasWritten = false;
+            bool            rtAnimated = false;  // the engine rewrote rotation/translation since first person began
+            bool            sAnimated = false;   // ... the scale
+        };
+        std::vector<FlatBoneTrack> _flatTrack;
+        const void* _flatTrackTree = nullptr;
+        bool _flatTrackActive = false;
+        RE::NiPoint3 _flatBodyWritten{};
+        bool _flatBodyHasWritten = false;
+        void flatTrackFrameStart();
+        void flatTrackFrameEnd();
+        void flatTrackRestore(int a_camState);
 #endif
 
     protected:

@@ -7,6 +7,7 @@
 // Flat: the same end state by a rigid move of the arm's upper-arm bone (WEAPON lands exactly on the offset node), then the
 // engine's own first-person update - the call and addresses fo4flatvr's hands code verified in game (Hands.cpp W1):
 //   D9F7D0 (float time, NiAVObject*, NiCamera*, bool) -> NiAVObject::Update, 21FA470 Q1stPersonCamera, 30E8940 frame time.
+#include "vrshim/Bridge.h"
 #include "vrshim/FlatCompat.h"
 #include "vrshim/VrNodes.h"
 #include "vrshim/XfMath.h"
@@ -121,7 +122,9 @@ namespace vrshim
             // (per-weapon JSON + its own calibration), so the primary hand takes the gun's actual WEAPON as its target and
             // keeps FRIK's hand-to-weapon local: hand = WEAPON(gun) . weaponLocal^-1. Needs the gun's write of this frame:
             // fo4flatvr runs FRIK's frame after its gun (FrikBridge.cpp HkNotify). Falls back to FRIK's offset node.
-            if (weapon == fpHands().weapon && g_inHandReal) {
+            // 16 Nov: not in a pause-time frame - the floating gun is not placed while the game is paused (its W1 hook is in the
+            // player update), so its WEAPON is frozen; the hand follows the controller instead (user: hands frozen at a terminal)
+            if (weapon == fpHands().weapon && g_inHandReal && !vrshim::bridge::pausedFrame()) {
                 ++g_gripFrames;
                 Xf gun;
                 if (GunWeaponWorld(a_pc, gun) && std::sqrt((gun.t - target.t).x * (gun.t - target.t).x + (gun.t - target.t).y * (gun.t - target.t).y + (gun.t - target.t).z * (gun.t - target.t).z) < 40.0) {

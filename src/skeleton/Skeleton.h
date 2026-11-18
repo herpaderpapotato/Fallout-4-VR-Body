@@ -119,6 +119,12 @@ namespace frik
 
         void onFrameUpdate();
 
+#ifdef FRIK_FLAT // C36
+        // the body height FRIK fits the skeleton to (PlayerHeight): FRIK.toml's, or with [FRIK] bAutoBodyHeight=1 the camera's own
+        // standing height (see Skeleton.cpp updateFlatBodyHeight)
+        float playerHeightFlat() const;
+#endif
+
     private:
         Skeleton(RE::NiNode* rootNode, const bool inPowerArmor)
             : _root(rootNode),
@@ -195,6 +201,11 @@ namespace frik
         RE::NiNode* _chest;
         float _torsoLen;
         float _legLen;
+#ifdef FRIK_FLAT // C36
+        void updateFlatBodyHeight();
+        float _flatHeight = 0.0f;        // low-passed standing camera height (FRIK units), 0 = not measured yet / off
+        float _flatHeightLogged = 0.0f;
+#endif
         ArmNodes _rightArm;
         ArmNodes _leftArm;
         // flattened bone tree index by bone name, for API bone reads

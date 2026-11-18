@@ -1,0 +1,67 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Setup xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Generate
+        run: python -I tools/gen.py
+
+      - name: Configure
+        run: xmake f -p windows -a x64 -m releasedbg -y
+
+      - name: Build
+        run: xmake build -y FRIK
+
+      # Same layout as package_mods.py's FRIK-flat folder (that script lives outside this repo).
+      - name: Stage MO2 mod folder
+        shell: pwsh
+        run: |
+          $v = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "dev-$($env:GITHUB_SHA.Substring(0, 7))" }
+          $s = "build/package/FRIK-flat"
+          $bin = "build/windows/x64/releasedbg"
+          New-Item -ItemType Directory -Force "$s/F4SE/Plugins" | Out-Null
+          Copy-Item "$bin/FRIK.dll", "$bin/FRIK.pdb" "$s/F4SE/Plugins"
+          foreach ($sub in "Materials", "Meshes", "Textures") {
+            New-Item -ItemType Directory -Force "$s/$sub" | Out-Null
+            Copy-Item "data/mod/$sub/FRIK" "$s/$sub/FRIK" -Recurse
+          }
+          $zip = "FRIK-flat-$v.zip"
+          Compress-Archive -Path "$s/*" -DestinationPath $zip
+          "ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FRIK-flat
+          path: build/package/FRIK-flat
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP }}
+          generate_release_notes: true

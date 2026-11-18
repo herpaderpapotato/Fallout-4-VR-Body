@@ -23,7 +23,7 @@
 #include "vrcf/VRControllersManager.h"
 #include "vrui/UIManager.h"
 #include "vrshim/Bridge.h" // FRIK-flat C12
-#include "fo4flatvr/FrikBridgeApi.h" // FRIK-flat selfie test flag
+#include "../../plugin/src/plugin/FrikBridgeApi.h" // FRIK-flat selfie test flag
 #include "vrshim/VrNodes.h" // FRIK-flat C17
 #include "vrshim/XfMath.h" // FRIK-flat C22
 #include "vrshim/StableSkin.h" // FRIK-flat C23
@@ -270,6 +270,11 @@ namespace frik
         // replaced. Main config is owned by FRIK so it must be closed explicitly, the Pipboy and weapon
         // reposition configs are released together with the skeleton they observe.
         _mainConfigMode.closeConfigMode();
+#ifdef FRIK_FLAT // C37: a loaded game has a new body; its first first-person frame takes the engine pose afresh
+        _flatTrackActive = false;
+        _flatTrackTree = nullptr;
+        _flatBodyHasWritten = false;
+#endif
 
         if (_skelly) {
             logger::info("Resetting skeleton for new game session...");
@@ -340,6 +345,7 @@ namespace frik
                 if (_flatSkinActive) {
                     const auto pl = RE::PlayerCharacter::GetSingleton();
                     vrshim::skin::restore(pl->loadedData && pl->loadedData->data3D ? pl->loadedData->data3D.get() : nullptr);
+                    flatTrackRestore(cs);  // C37: what FRIK left on bones the engine does not re-animate goes back
                     _flatSkinActive = false;
                     logger::info("FRIK-flat: camera state {} (not first person): body left to the engine", cs);
                 }
@@ -421,6 +427,9 @@ namespace frik
             _weaponPosition->onFrameStart();
         }
 
+#ifdef FRIK_FLAT // C37: the engine's own pose of this frame per bone (before FRIK writes), for C28 and the exit restore
+        flatTrackFrameStart();
+#endif
 #ifdef FRIK_FLAT // C22 diag: what the engine changed in the body tree since FRIK's last frame (render may read it in between)
         if (auto* tree = f4vr::getFlattenedBoneTree(); tree && tree->transforms && static_cast<int>(_flatEndOfFrame.size()) == tree->numTransforms) {
             float mx = 0.0f;
@@ -434,11 +443,7 @@ namespace frik
                 }
             }
             _flatBetweenRoot = MatrixUtils::vec3Len(rootT - _flatEndOfFrame[0]);
-            _flatEngineLocal.resize(tree->numTransforms);
-            for (int i = 0; i < tree->numTransforms; ++i) {
-                const auto& tb = tree->transforms[i];
-                _flatEngineLocal[i] = tb.refNode ? tb.refNode->local : tb.local;  // C28: the animation's pose of this frame (before FRIK)
-            }
+            // C28 input (the animation's pose of this frame, before FRIK) comes from C37 flatTrackFrameStart now
             // C28 diag (user: Drifter coat skirt splayed "as if the knees are bent all the way"): the engine's leg pose at the start
             // of the frame (knee angle) and the leg-hanging helper bones (children of pelvis/thighs/calves), every 5 s
             static auto s_legT = std::chrono::steady_clock::now() - std::chrono::seconds(10);
@@ -512,6 +517,7 @@ namespace frik
         if (const auto pl = RE::PlayerCharacter::GetSingleton(); pl && pl->loadedData && pl->loadedData->data3D) {
             vrshim::skin::refresh(pl->loadedData->data3D.get());  // the render skins this copy, not the bones the next update animates
         }
+        flatTrackFrameEnd();  // C37
 #endif
         _skelly->latchRenderedWrists();
 
@@ -998,6 +1004,158 @@ namespace frik
             ++n;
         }
         _flatLegHelpers = n;
+    }
+#endif
+
+#ifdef FRIK_FLAT // C37
+    namespace
+    {
+        RE::NiTransform& flatBoneLocal(f4vr::BSFlattenedBoneTree::BoneTransforms& a_b) { return a_b.refNode ? a_b.refNode->local : a_b.local; }
+        bool sameRT(const RE::NiTransform& a, const RE::NiTransform& b)
+        {
+            return std::memcmp(&a.rotate, &b.rotate, sizeof(a.rotate)) == 0 && std::memcmp(&a.translate, &b.translate, sizeof(a.translate)) == 0;
+        }
+        bool sameS(const RE::NiTransform& a, const RE::NiTransform& b) { return std::memcmp(&a.scale, &b.scale, sizeof(a.scale)) == 0; }
+        bool restoreOn()
+        {
+            static const bool s_on = [] {
+                const bool on = vrshim::bridge::iniInt("bRestoreEngineBody", 1) != 0;
+                logger::info("FRIK-flat C37: leaving first person restores what FRIK left on bones the engine does not animate: {} ([FRIK] bRestoreEngineBody)",
+                    on ? "on" : "OFF");
+                return on;
+            }();
+            return s_on;
+        }
+    }
+
+    /**
+     * C37 (user 16 Nov: legs "stretch around" in first person and "even in an AAF animation I've seen them flop around"): the
+     * flat body is animated by the engine every frame, and FRIK writes the locals of the bones it poses. A bone the engine does
+     * not re-animate (a helper or root the animation graph has no track for, or the 3D root's x/y, set from the actor only when
+     * it moves) keeps FRIK's last first-person write after first person ends: in AAF / SCENE (camera state 3), third person (8)
+     * and every other state where FRIK steps back, the engine's animation would play on a body FRIK still partly holds. It also
+     * fed C28 back on itself: C28 read "the animation's pose" at the frame start, which for such a bone is FRIK's own write of
+     * the last frame, so helper' = thigh(FRIK) . thigh(anim)^-1 . helper accumulated every frame.
+     * Per bone: base = the local when first person began, anim = the engine's latest pose (taken only when the local changed
+     * since FRIK's last write, i.e. the engine wrote it), written = what FRIK left. C28 uses anim. On leaving first person, a
+     * bone whose rotation/translation (or scale) the engine never rewrote during the whole first-person stint gets base back,
+     * only while it still holds FRIK's write; the 3D root's x/y (FRIK: camera x/y) gets the actor's position back. Worlds follow
+     * with the engine's next update. Off: fo4flatvr.ini [FRIK] bRestoreEngineBody=0 (C28 then reads the raw frame-start locals
+     * as before, nothing restored).
+     */
+    void FRIK::flatTrackFrameStart()
+    {
+        auto* tree = f4vr::getFlattenedBoneTree();
+        if (!tree || !tree->transforms || tree->numTransforms <= 0) {
+            _flatEngineLocal.clear();
+            return;
+        }
+        const int n = tree->numTransforms;
+        if (!_flatTrackActive || _flatTrackTree != tree || static_cast<int>(_flatTrack.size()) != n) {
+            _flatTrack.assign(n, {});
+            for (int i = 0; i < n; ++i) {
+                _flatTrack[i].base = _flatTrack[i].anim = flatBoneLocal(tree->transforms[i]);
+            }
+            _flatTrackTree = tree;
+            _flatTrackActive = true;
+            _flatBodyHasWritten = false;
+        }
+        const bool track = restoreOn();
+        _flatEngineLocal.resize(n);
+        for (int i = 0; i < n; ++i) {
+            auto&       t = _flatTrack[i];
+            const auto& cur = flatBoneLocal(tree->transforms[i]);
+            if (!track || !t.hasWritten) {
+                t.anim = cur;
+            } else {
+                if (!sameRT(cur, t.written)) {
+                    t.rtAnimated = true;
+                    t.anim.rotate = cur.rotate;
+                    t.anim.translate = cur.translate;
+                }
+                if (!sameS(cur, t.written)) {
+                    t.sAnimated = true;
+                    t.anim.scale = cur.scale;
+                }
+            }
+            _flatEngineLocal[i] = t.anim;
+        }
+    }
+
+    void FRIK::flatTrackFrameEnd()
+    {
+        auto* tree = f4vr::getFlattenedBoneTree();
+        if (!_flatTrackActive || !tree || tree != _flatTrackTree || static_cast<int>(_flatTrack.size()) != tree->numTransforms) {
+            return;
+        }
+        for (int i = 0; i < tree->numTransforms; ++i) {
+            _flatTrack[i].written = flatBoneLocal(tree->transforms[i]);
+            _flatTrack[i].hasWritten = true;
+        }
+        if (const auto pl = RE::PlayerCharacter::GetSingleton(); pl && pl->loadedData && pl->loadedData->data3D) {
+            _flatBodyWritten = pl->loadedData->data3D->local.translate;
+            _flatBodyHasWritten = true;
+        }
+    }
+
+    void FRIK::flatTrackRestore(const int a_camState)
+    {
+        if (!_flatTrackActive) {
+            return;
+        }
+        _flatTrackActive = false;  // the next first-person frame takes the engine's pose afresh
+        auto* tree = f4vr::getFlattenedBoneTree();
+        if (!restoreOn() || !tree || tree != _flatTrackTree || static_cast<int>(_flatTrack.size()) != tree->numTransforms) {
+            return;
+        }
+        int         nRT = 0, nS = 0, animated = 0;
+        std::string names, animNames;
+        for (int i = 0; i < tree->numTransforms; ++i) {
+            auto& t = _flatTrack[i];
+            auto& b = tree->transforms[i];
+            animated += t.rtAnimated ? 1 : 0;
+            if (t.rtAnimated && animNames.size() < 400) {
+                animNames += std::format(" {}", b.name.c_str() ? b.name.c_str() : "?");
+            }
+            if (!t.hasWritten) {
+                continue;
+            }
+            auto&      l = flatBoneLocal(b);
+            const bool doRT = !t.rtAnimated && sameRT(l, t.written) && !sameRT(l, t.base);
+            const bool doS = !t.sAnimated && sameS(l, t.written) && !sameS(l, t.base);
+            if (!doRT && !doS) {
+                continue;
+            }
+            if (doRT) {
+                l.rotate = t.base.rotate;
+                l.translate = t.base.translate;
+                ++nRT;
+            }
+            if (doS) {
+                l.scale = t.base.scale;
+                ++nS;
+            }
+            if (b.refNode) {
+                b.local = l;
+            }
+            if (names.size() < 400) {
+                names += std::format(" {}{}", b.name.c_str() ? b.name.c_str() : "?", doRT ? (doS ? "(rt+s)" : "(rt)") : "(s)");
+            }
+        }
+        float bodyMoved = -1.0f;
+        if (const auto pl = RE::PlayerCharacter::GetSingleton(); _flatBodyHasWritten && pl && pl->loadedData && pl->loadedData->data3D) {
+            auto& lt = pl->loadedData->data3D->local.translate;
+            if (lt.x == _flatBodyWritten.x && lt.y == _flatBodyWritten.y) {  // not set from the actor since FRIK's last write
+                bodyMoved = std::hypot(lt.x - pl->data.location.x, lt.y - pl->data.location.y);
+                lt.x = pl->data.location.x;
+                lt.y = pl->data.location.y;
+            }
+        }
+        _flatBodyHasWritten = false;
+        logger::info("FRIK-flat C37: camera state {}: {} of {} bones animated by the engine in first person:{} | restored rot/pos {} scale {}:{} | 3D root x/y "
+                     "back to the actor: {}",
+            a_camState, animated, tree->numTransforms, animNames.empty() ? " -" : animNames, nRT, nS, names.empty() ? " -" : names,
+            bodyMoved < 0.0f ? std::string("not needed (set by the engine)") : std::format("{:.1f} u", bodyMoved));
     }
 #endif
 

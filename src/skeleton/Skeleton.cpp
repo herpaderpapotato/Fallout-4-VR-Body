@@ -18,6 +18,9 @@
 #include "perf/Perf.h"
 #include "skeleton/QuaternionSmoothing.h"
 #include "utils.h"
+#ifdef FRIK_FLAT
+#include "vrshim/Bridge.h" // C36
+#endif
 
 using namespace common;
 using namespace f4vr;
@@ -218,13 +221,73 @@ namespace frik
     void Skeleton::setBodyLen()
     {
         _torsoLen = MatrixUtils::vec3Len(findNode(_root, "Camera")->world.translate - findNode(_root, "COM")->world.translate);
+#ifdef FRIK_FLAT // C36
+        _torsoLen *= playerHeightFlat() / DEFAULT_CAMERA_HEIGHT;
+#else
         _torsoLen *= g_config.playerHeight / DEFAULT_CAMERA_HEIGHT;
+#endif
 
         _legLen = MatrixUtils::vec3Len(findNode(_root, "LLeg_Thigh")->world.translate - findNode(_root, "Pelvis")->world.translate);
         _legLen += MatrixUtils::vec3Len(findNode(_root, "LLeg_Calf")->world.translate - findNode(_root, "LLeg_Thigh")->world.translate);
         _legLen += MatrixUtils::vec3Len(findNode(_root, "LLeg_Foot")->world.translate - findNode(_root, "LLeg_Calf")->world.translate);
+#ifdef FRIK_FLAT // C36
+        _legLen *= playerHeightFlat() / DEFAULT_CAMERA_HEIGHT;
+#else
         _legLen *= g_config.playerHeight / DEFAULT_CAMERA_HEIGHT;
+#endif
     }
+
+#ifdef FRIK_FLAT // C36
+    /**
+     * Flat (user 16 Nov: "frik's leg movements are really bad ... They move and stretch around"): FRIK fits a body of PlayerHeight
+     * (FRIK.toml, default 120.48 = the flat game's standing eye height) under the camera and expects, standing upright,
+     * HMD height above the room floor + HMD offset (= uprightHmdNode local z + getAdjustedPlayerHMDOffset, the quantity
+     * getBodyPitch compares) to equal it. In FO4VR that is the user's real eye height, which the user calibrates PlayerHeight
+     * to. On flat the camera height is the game's eye height plus fo4flatvr's head offset (fHeightOffsetCm + the head's height in
+     * the reference space): the user's 16 Nov 22:07 session stood at 140-147 u (FRIK.log `FRIK-flat body:` eye - pwnZ + 8.6),
+     * 20-27 u above PlayerHeight. FRIK then (getBodyPitch: |PlayerHeight - h| / PlayerHeight, absolute) pitched the torso
+     * forward as if crouching and lifted the hip to 77-80 u above the root (default standing pose 68.9), so the feet could not
+     * reach their floor targets: setSingleLeg's out-of-reach branch, legs locked straight and swinging after the walk targets.
+     * Here PlayerHeight follows the camera's standing height (low-passed 4 s, sampled only standing on the ground: not sneaking,
+     * not in the air, not in a paused frame), i.e. what calibrating PlayerHeight does in FO4VR; sneaking and physical crouching
+     * still lower h against it and crouch the body as in FO4VR. Power armour keeps FRIK.toml's height (own offsets there).
+     * Clamped to 0.7 .. 1.45 x FRIK.toml PlayerHeight. Off: fo4flatvr.ini [FRIK] bAutoBodyHeight=0.
+     */
+    float Skeleton::playerHeightFlat() const
+    {
+        const float cfg = g_config.playerHeight;
+        return _flatHeight > 0.0f ? std::clamp(_flatHeight, 0.7f * cfg, 1.45f * cfg) : cfg;
+    }
+
+    void Skeleton::updateFlatBodyHeight()
+    {
+        static const bool s_on = [] {
+            const bool on = vrshim::bridge::iniInt("bAutoBodyHeight", 1) != 0;
+            logger::info("FRIK-flat C36: body height follows the camera's standing height: {} ([FRIK] bAutoBodyHeight)", on ? "on" : "OFF (FRIK.toml PlayerHeight)");
+            return on;
+        }();
+        if (!s_on || _inPowerArmor || !_playerNodes || !_playerNodes->uprightHmdNode) {
+            _flatHeight = 0.0f;
+            return;
+        }
+        const float h = _playerNodes->uprightHmdNode->local.translate.z + getAdjustedPlayerHMDOffset();
+        if (isPlayerSneaking() || isJumpingOrInAir() || vrshim::bridge::pausedFrame() || !std::isfinite(h) || h < 50.0f || h > 260.0f) {
+            return;
+        }
+        if (_flatHeight <= 0.0f) {
+            _flatHeight = h;  // first standing sample after skeleton init: no ramp from the default
+        } else {
+            const float dt = std::clamp(_frameTime, 0.0f, 0.25f);
+            _flatHeight += (h - _flatHeight) * (1.0f - std::exp(-dt / 4.0f));
+        }
+        const float eff = playerHeightFlat();
+        if (std::abs(eff - _flatHeightLogged) > 2.0f) {
+            _flatHeightLogged = eff;
+            logger::info("FRIK-flat C36: body height {:.1f} u (camera standing h {:.1f}; FRIK.toml PlayerHeight {:.1f}) -> skeleton scale {:.3f}", eff, h,
+                g_config.playerHeight, eff / DEFAULT_CAMERA_HEIGHT);
+        }
+    }
+#endif
 
     /**
      * Runs on every game frame to calculate and update the skeleton transform.
@@ -234,6 +297,9 @@ namespace frik
         F4CF_PERF_FUNCTION();
 
         setTime();
+#ifdef FRIK_FLAT // C36
+        updateFlatBodyHeight();
+#endif
 
         // save last position at this time for anyone doing speed calculations
         _lastPosition = _curentPosition;
@@ -472,7 +538,11 @@ namespace frik
         constexpr float basePitch = 105.3f;
         constexpr float weight = 0.1f;
 
+#ifdef FRIK_FLAT // C36
+        const float curHeight = playerHeightFlat();
+#else
         const float curHeight = g_config.playerHeight;
+#endif
         const float heightCalc = std::abs((curHeight - (_playerNodes->uprightHmdNode->local.translate.z + getAdjustedPlayerHMDOffset())) / curHeight);
         const float angle = heightCalc * (basePitch + weight * MatrixUtils::radsToDegrees(neckPitch));
         return MatrixUtils::degreesToRads(angle);
@@ -519,7 +589,11 @@ namespace frik
         _root->local.translate.z = z;
         //_root->local.translate *= 0.0f;
         //_root->local.translate.y = g_config.playerBodyOffsetForwardStanding - 6.0f;
+#ifdef FRIK_FLAT // C36
+        _root->local.scale = playerHeightFlat() / DEFAULT_CAMERA_HEIGHT;
+#else
         _root->local.scale = g_config.playerHeight / DEFAULT_CAMERA_HEIGHT; // set scale based off specified user height
+#endif
     }
 
     void Skeleton::setBodyPosture(const float neckPitch)

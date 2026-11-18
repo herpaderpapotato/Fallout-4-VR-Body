@@ -20,7 +20,11 @@
 // for the next game frame.
 #include <stdint.h>
 
-#define FO4FLATVR_FRIK_BRIDGE_VERSION 3u
+// v4 (16 Nov, gestures): GetSelfie - fo4flatvr's VRIK-style selfie (both hands up -> FRIK's mirror body in front of the
+// viewer, steered by the wrist roll; Gestures.h). Backwards compatible: fo4flatvr hands the same table to a v3 or v4 request
+// (fields are only appended), and FRIK.dll asks for v4 first, then v3, and calls GetSelfie only when version >= 4.
+#define FO4FLATVR_FRIK_BRIDGE_VERSION 4u
+#define FO4FLATVR_FRIK_BRIDGE_MIN_VERSION 3u
 
 #ifdef __cplusplus
 extern "C" {
@@ -70,7 +74,8 @@ typedef struct FO4FlatVR_Frame
 } FO4FlatVR_Frame;
 
 // Game frame callback (job thread that runs the player update; the frame's animation, scenegraph and camera update are done).
-// Must not throw.
+// Also, while the game is paused (UI::menuMode != 0: no player update), once per frame from Main::OnIdle C33E62 on the main
+// thread (FO4VR's own FRIK slot; [FRIK] bPausedFrame=1, never in the same frame as the C351F3 call). Must not throw.
 typedef void (*FO4FlatVR_FrameCallback)(void* a_ctx);
 
 // v3: camera offset (FRIK smooth movement). Called by fo4flatvr once per first-person camera update (the thread running
@@ -78,6 +83,18 @@ typedef void (*FO4FlatVR_FrameCallback)(void* a_ctx);
 // world-space offset in game units to add to the camera position (FO4VR: PlayerWorldNode local translate without FRIK's HMD
 // height offset) and returns 1, or returns 0 = no offset this frame. Must not throw.
 typedef uint8_t (*FO4FlatVR_CameraOffsetCallback)(void* a_ctx, float a_offset[3]);
+
+// v4: selfie request (fo4flatvr gestures). FRIK.dll polls it once per frame.
+typedef struct FO4FlatVR_Selfie
+{
+    uint32_t size;       // sizeof(FO4FlatVR_Selfie), set by the caller
+    uint32_t seq;        // increments on every on/off toggle
+    uint8_t  active;     // selfie mode wanted (FRIK's setSelfieMode)
+    uint8_t  follow;     // the hands are up: (re)place the body distanceM in front of the camera, facing it, and steer it
+    uint8_t  pad[2];
+    float    distanceM;  // metres in front of the camera (horizontal)
+    float    yawRad;     // extra turn about up from "facing the viewer", counter-clockwise seen from above (wrist roll)
+} FO4FlatVR_Selfie;
 
 typedef struct FO4FlatVR_FrikBridge
 {
@@ -99,6 +116,8 @@ typedef struct FO4FlatVR_FrikBridge
     // v3: register (null = unregister) the camera offset callback. 1 = fo4flatvr's camera hook will call it ([FRIK]
     // bSmoothMovement=1 and the first-person camera hook installed); 0 = it will not.
     uint8_t (*SetCameraOffsetCallback)(FO4FlatVR_CameraOffsetCallback a_cb, void* a_ctx);
+    // v4: the current selfie request (any thread). 0 = none available (a_out untouched).
+    uint8_t (*GetSelfie)(FO4FlatVR_Selfie* a_out);
 } FO4FlatVR_FrikBridge;
 
 typedef const FO4FlatVR_FrikBridge* (*FO4FLATVR_GetFrikBridge_t)(uint32_t a_version);

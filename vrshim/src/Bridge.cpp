@@ -35,6 +35,7 @@ namespace vrshim::bridge
         std::atomic<std::uint64_t>  g_pwnZSmoothedFrame{ ~0ull };  // g_frames value when set (smoothing runs before frameUpdate)
         std::atomic<float>          g_pwnZDefault{ 0.0f };
         float                       g_pwnZ = 0.0f;
+        bool                        g_paused = false;
 
         // OpenXR quaternion (reference space) -> rotation in the game basis (X right, Y forward, Z up): B R B^T, B = (x, -z, y)
         M3 GameRotFromXr(const float q[4])
@@ -153,7 +154,19 @@ namespace vrshim::bridge
         const auto mod = ::GetModuleHandleW(L"fo4flatvr.dll");
         const auto get = mod ? reinterpret_cast<FO4FLATVR_GetFrikBridge_t>(::GetProcAddress(mod, "FO4FLATVR_GetFrikBridge")) : nullptr;
         g_api = get ? get(FO4FLATVR_FRIK_BRIDGE_VERSION) : nullptr;
+        if (!g_api && get) {
+            g_api = get(3u);  // v4 (selfie) appends GetSelfie only: an older fo4flatvr.dll still serves v3
+        }
         return g_api != nullptr;
+    }
+
+    bool selfie(FO4FlatVR_Selfie& a_out) noexcept
+    {
+        if (!g_api || g_api->version < 4u || !g_api->GetSelfie) {
+            return false;
+        }
+        a_out.size = sizeof(FO4FlatVR_Selfie);
+        return g_api->GetSelfie(&a_out) != 0;
     }
 
     const FO4FlatVR_FrikBridge* api() noexcept { return g_api; }
@@ -189,6 +202,14 @@ namespace vrshim::bridge
         return true;
     }
 
+    bool pausedFrame() noexcept { return g_paused; }
+
+    int iniInt(const char* a_key, int a_def) noexcept
+    {
+        const char* path = g_api && g_api->IniPath ? g_api->IniPath() : nullptr;
+        return path ? static_cast<int>(::GetPrivateProfileIntA("FRIK", a_key, a_def, path)) : a_def;
+    }
+
     const FO4FlatVR_Frame&      frame() noexcept { return g_frame; }
     bool                        valid() noexcept { return g_valid; }
     bool                        leftHanded() noexcept { return g_valid && g_frame.leftHanded; }
@@ -213,6 +234,10 @@ namespace vrshim::bridge
         g_pwnZ = g_pwnZSmoothedFrame.load(std::memory_order_acquire) == g_frames ? g_pwnZSmoothed.load(std::memory_order_relaxed)
                                                                                  : g_pwnZDefault.load(std::memory_order_relaxed);
         ++g_frames;
+        {
+            const auto* ui = RE::UI::GetSingleton();
+            g_paused = ui && ui->menuMode != 0;
+        }
         if (!g_api) return;
         FO4FlatVR_Frame f{};
         f.size = sizeof(f);
@@ -242,7 +267,11 @@ namespace vrshim::bridge
         // C20: the third-person body is drawn in first person. FRIK's DoShow1stPerson patch (D78CFE) only acts when the view is
         // switched; loading a save already in first person returns early (1st/3rd cull flags already differ) and leaves Get3D(0)
         // app-culled (measured 15 Nov 14:05: cull3p=1). First person = the first-person root shown.
-        if (auto* third = player->Get3D(false), *first = player->Get3D(true); third && first && third->GetAppCulled() && !first->GetAppCulled()) {
+        // 16 Nov: only in camera states 0/4 (FRIK's body states, C23): in every other state (AAF / SCENE free camera 3, third
+        // person 8, ...) nothing of FRIK-flat touches the player's body.
+        const int camState = camera->currentState ? static_cast<int>(camera->currentState->id.get()) : -1;
+        if (auto* third = player->Get3D(false), *first = player->Get3D(true);
+            (camState == 0 || camState == 4) && third && first && third->GetAppCulled() && !first->GetAppCulled()) {
             third->SetAppCulled(false);
             static std::uint32_t s_unculls = 0;
             if (++s_unculls <= 3 || (s_unculls % 1000) == 0) {

@@ -461,3 +461,8 @@ C346AC).
   refresh + tree diag, C23 stable skin copy + first-person-only gate, C24 raw weapon-drawn bits, C25 fNearDistance:Display 15 -> 5
   (`[FRIK] fNearDistance`; the 15 u near plane cut the shoulders). FRIK frame 0.10-0.14 ms mean at C351F3; frame interval
   unchanged (8.33 ms). Default ON (`[FRIK] bBody=1`). Details: work/handoff/frik-integration.md.
+
+- 2026-11-16 22:30-22:55: pause-time frame from Main::OnIdle C33E62 (FO4VR's FRIK slot, fo4flatvr `[FRIK] bPausedFrame`), only
+  while UI::menuMode != 0 (section 6 open item closed); C36 PlayerHeight follows the camera's standing height
+  (`bAutoBodyHeight`); C37 per-bone engine-pose tracking: C28 input fixed, FRIK's writes on bones the engine does not animate
+  restored when first person ends (`bRestoreEngineBody`); C20 gated to camera states 0/4. Details: work/handoff/frik-integration.md.
