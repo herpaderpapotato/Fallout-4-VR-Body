@@ -203,7 +203,7 @@ namespace frik
         float _legLen;
 #ifdef FRIK_FLAT // C36
         void updateFlatBodyHeight();
-        float _flatHeight = 0.0f;        // low-passed standing camera height (FRIK units), 0 = not measured yet / off
+        float _flatHeight = 0.0f; // low-passed standing camera height (FRIK units), 0 = not measured yet / off
         float _flatHeightLogged = 0.0f;
 #endif
         ArmNodes _rightArm;

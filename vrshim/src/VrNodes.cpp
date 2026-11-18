@@ -17,7 +17,7 @@ namespace vrshim
     namespace
     {
         RE::VRPlayerNodes g_nodes{};
-        bool              g_created = false;
+        bool g_created = false;
 
         // C33 (user 15 Nov: hand/wrist orientation follows the player's facing): the flat CommonLibF4 NiAVObject constructor
         // sets local/world/previousWorld with NiTransform::MakeIdentity, which copies NiMatrix3::IDENTITY - defined there as
@@ -32,11 +32,12 @@ namespace vrshim
             static const bool s_on = [] {
                 const auto* api = vrshim::bridge::api();
                 const char* ini = api && api->IniPath ? api->IniPath() : nullptr;
-                const bool  on = !ini || ::GetPrivateProfileIntA("FRIK", "bFixNodeIdentity", 1, ini) != 0;
+                const bool on = !ini || ::GetPrivateProfileIntA("FRIK", "bFixNodeIdentity", 1, ini) != 0;
                 logger::info("FRIK-flat C33: VR stand-in nodes get a proper identity rotation: {} ([FRIK] bFixNodeIdentity)", on ? "on" : "OFF");
                 return on;
             }();
-            if (!s_on) return;
+            if (!s_on)
+                return;
             for (auto* t : { &a_node->local, &a_node->world, &a_node->previousWorld }) {
                 t->rotate.MakeIdentity();
                 t->translate = {};
@@ -144,22 +145,27 @@ namespace vrshim
 {
     namespace
     {
-        FpHands       g_fp{};
+        FpHands g_fp{};
         std::uint64_t g_fpGen = 0;
-        RE::NiNode*   g_standR = nullptr;
-        RE::NiNode*   g_standL = nullptr;
-        RE::NiNode*   g_standW = nullptr;
-        RE::NiNode*   g_standWL = nullptr;
+        RE::NiNode* g_standR = nullptr;
+        RE::NiNode* g_standL = nullptr;
+        RE::NiNode* g_standW = nullptr;
+        RE::NiNode* g_standWL = nullptr;
 
         RE::NiNode* find(RE::NiAVObject* a_obj, const char* a_name, int a_depth = 64)
         {
-            if (!a_obj) return nullptr;
+            if (!a_obj)
+                return nullptr;
             auto* node = a_obj->IsNode();
-            if (!node) return nullptr;
-            if (_stricmp(a_name, node->name.c_str()) == 0) return node;
-            if (a_depth < 1) return nullptr;
+            if (!node)
+                return nullptr;
+            if (_stricmp(a_name, node->name.c_str()) == 0)
+                return node;
+            if (a_depth < 1)
+                return nullptr;
             for (auto& child : node->children) {
-                if (auto* r = child ? find(child.get(), a_name, a_depth - 1) : nullptr) return r;
+                if (auto* r = child ? find(child.get(), a_name, a_depth - 1) : nullptr)
+                    return r;
             }
             return nullptr;
         }
@@ -167,12 +173,12 @@ namespace vrshim
         RE::NiNode* standIn(const char* a_name, RE::NiNode* a_parent)
         {
             auto* node = new RE::NiNode(0);
-            properIdentity(node);  // C33
+            properIdentity(node); // C33
             node->name = a_name;
             if (a_parent) {
                 a_parent->AttachChild(node, true);
             } else {
-                node->IncRefCount();  // detached root: kept alive for the whole session
+                node->IncRefCount(); // detached root: kept alive for the whole session
             }
             return node;
         }
@@ -180,8 +186,8 @@ namespace vrshim
 
     void selectFpHands()
     {
-        auto*   pc = RE::PlayerCharacter::GetSingleton();
-        auto*   fp = pc ? pc->firstPerson3D.get() : nullptr;
+        auto* pc = RE::PlayerCharacter::GetSingleton();
+        auto* fp = pc ? pc->firstPerson3D.get() : nullptr;
         FpHands real{};
         real.rHand = find(fp, "RArm_Hand");
         real.lHand = find(fp, "LArm_Hand");
@@ -201,7 +207,7 @@ namespace vrshim
         // hand targets = its PrimaryWeaponOffsetNode . glue^-1 in absolute world, and the drawn weapon stays with fo4flatvr's
         // floating gun (same FRIK glue + per-weapon JSONs). kUseRealFpNodes keeps the real-node path for a future rig port.
         constexpr bool kUseRealFpNodes = false;
-        FpHands    next{};
+        FpHands next{};
         const bool realR = kUseRealFpNodes && real.rHand && real.weapon;
         const bool realL = kUseRealFpNodes && real.lHand && real.weaponLeft;
         next.rHand = realR ? real.rHand : g_standR;
@@ -212,13 +218,29 @@ namespace vrshim
         if (next.rHand != g_fp.rHand || next.lHand != g_fp.lHand || next.weapon != g_fp.weapon || next.weaponLeft != g_fp.weaponLeft) {
             ++g_fpGen;
             logger::info("FRIK-flat: first-person hands -> right {}, left {} (generation {}; real: rHand={} lHand={} Weapon={} WeaponLeft={})",
-                next.rHand == g_standR ? "stand-in" : "real", next.lHand == g_standL ? "stand-in" : "real", g_fpGen, real.rHand != nullptr,
-                real.lHand != nullptr, real.weapon != nullptr, real.weaponLeft != nullptr);
+                next.rHand == g_standR ? "stand-in" : "real",
+                next.lHand == g_standL ? "stand-in" : "real",
+                g_fpGen,
+                real.rHand != nullptr,
+                real.lHand != nullptr,
+                real.weapon != nullptr,
+                real.weaponLeft != nullptr);
         }
         g_fp = next;
     }
 
-    const FpHands& fpHands() noexcept { return g_fp; }
-    std::uint64_t  fpHandsGeneration() noexcept { return g_fpGen; }
-    bool           isStandInWeapon(const RE::NiNode* a_node) noexcept { return a_node && (a_node == g_standW || a_node == g_standWL); }
+    const FpHands& fpHands() noexcept
+    {
+        return g_fp;
+    }
+
+    std::uint64_t fpHandsGeneration() noexcept
+    {
+        return g_fpGen;
+    }
+
+    bool isStandInWeapon(const RE::NiNode* a_node) noexcept
+    {
+        return a_node && (a_node == g_standW || a_node == g_standWL);
+    }
 }

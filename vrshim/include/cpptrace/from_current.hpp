@@ -10,7 +10,14 @@ namespace cpptrace
 {
     struct stacktrace_stub
     {
-        [[nodiscard]] std::string to_string() const { return "(no stack trace in the FRIK-flat build)"; }
+        [[nodiscard]] std::string to_string() const
+        {
+            return "(no stack trace in the FRIK-flat build)";
+        }
     };
-    inline stacktrace_stub from_current_exception() { return {}; }
+
+    inline stacktrace_stub from_current_exception()
+    {
+        return {};
+    }
 }

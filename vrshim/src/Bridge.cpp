@@ -27,21 +27,21 @@ namespace vrshim::bridge
     namespace
     {
         const FO4FlatVR_FrikBridge* g_api = nullptr;
-        FO4FlatVR_Frame             g_frame{};
-        bool                        g_valid = false;
-        std::uint64_t               g_frames = 0;
-        std::uint64_t               g_posed = 0;
-        std::atomic<float>          g_pwnZSmoothed{ 0.0f };
-        std::atomic<std::uint64_t>  g_pwnZSmoothedFrame{ ~0ull };  // g_frames value when set (smoothing runs before frameUpdate)
-        std::atomic<float>          g_pwnZDefault{ 0.0f };
-        float                       g_pwnZ = 0.0f;
-        bool                        g_paused = false;
+        FO4FlatVR_Frame g_frame{};
+        bool g_valid = false;
+        std::uint64_t g_frames = 0;
+        std::uint64_t g_posed = 0;
+        std::atomic<float> g_pwnZSmoothed{ 0.0f };
+        std::atomic<std::uint64_t> g_pwnZSmoothedFrame{ ~0ull }; // g_frames value when set (smoothing runs before frameUpdate)
+        std::atomic<float> g_pwnZDefault{ 0.0f };
+        float g_pwnZ = 0.0f;
+        bool g_paused = false;
 
         // OpenXR quaternion (reference space) -> rotation in the game basis (X right, Y forward, Z up): B R B^T, B = (x, -z, y)
         M3 GameRotFromXr(const float q[4])
         {
             const double x = q[0], y = q[1], z = q[2], w = q[3];
-            M3 r;  // OpenXR column-vector rotation
+            M3 r; // OpenXR column-vector rotation
             r.m[0][0] = 1 - 2 * (y * y + z * z), r.m[0][1] = 2 * (x * y - z * w), r.m[0][2] = 2 * (x * z + y * w);
             r.m[1][0] = 2 * (x * y + z * w), r.m[1][1] = 1 - 2 * (x * x + z * z), r.m[1][2] = 2 * (y * z - x * w);
             r.m[2][0] = 2 * (x * z - y * w), r.m[2][1] = 2 * (y * z + x * w), r.m[2][2] = 1 - 2 * (x * x + y * y);
@@ -51,15 +51,24 @@ namespace vrshim::bridge
             B.m[2][0] = 0, B.m[2][1] = 1, B.m[2][2] = 0;
             return Mul(Mul(B, r), T(B));
         }
-        V    GameVecFromXr(const float p[3]) { return { p[0], -p[2], p[1] }; }
+
+        V GameVecFromXr(const float p[3])
+        {
+            return { p[0], -p[2], p[1] };
+        }
+
         // heading of the forward (Y) axis about Z, radians, 0 = +Y
-        double Yaw(const M3& R) { return std::atan2(-R.m[0][1], R.m[1][1]); }
+        double Yaw(const M3& R)
+        {
+            return std::atan2(-R.m[0][1], R.m[1][1]);
+        }
 
         Xf HandXf(const FO4FlatVR_HeadRel& h, double upm)
         {
             Xf x;
             for (int r = 0; r < 3; ++r)
-                for (int c = 0; c < 3; ++c) x.R.m[r][c] = h.rot[r][c];
+                for (int c = 0; c < 3; ++c)
+                    x.R.m[r][c] = h.rot[r][c];
             x.R = Ortho(x.R);
             x.t = V{ h.pos[0], h.pos[1], h.pos[2] } * upm;
             return x;
@@ -68,18 +77,20 @@ namespace vrshim::bridge
         struct Calib
         {
             bool loaded = false;
-            Xf   right, left;
-            Xf   leftMirror;        // C34: left wand for right-handed mode (FRIK's off-hand chain -> mirror of the right hand)
+            Xf right, left;
+            Xf leftMirror; // C34: left wand for right-handed mode (FRIK's off-hand chain -> mirror of the right hand)
             bool leftMirrorOn = false;
         };
+
         Calib g_calib;
-        Xf    g_gripWorld[2];          // C32 diag
-        bool  g_gripWorldValid[2]{};
+        Xf g_gripWorld[2]; // C32 diag
+        bool g_gripWorldValid[2]{};
 
         float IniFloat(const char* a_section, const char* a_key, float a_def)
         {
             const char* path = g_api && g_api->IniPath ? g_api->IniPath() : nullptr;
-            if (!path) return a_def;
+            if (!path)
+                return a_def;
             char buf[64]{};
             ::GetPrivateProfileStringA(a_section, a_key, "", buf, sizeof(buf), path);
             return buf[0] ? std::strtof(buf, nullptr) : a_def;
@@ -87,10 +98,13 @@ namespace vrshim::bridge
 
         void LoadCalib(double a_upm)
         {
-            if (g_calib.loaded) return;
+            if (g_calib.loaded)
+                return;
             constexpr double d2r = 3.14159265358979 / 180.0;
             // fo4flatvr's floating-gun calibration: [Weapon], else the retired [Hands] section, else the default
-            auto cal = [](const char* k, float d) { return IniFloat("Weapon", k, IniFloat("Hands", k, d)); };
+            auto cal = [](const char* k, float d) {
+                return IniFloat("Weapon", k, IniFloat("Hands", k, d));
+            };
             const double rx = cal("fGripRotXDeg", -60.0f), ry = cal("fGripRotYDeg", 0.0f), rz = cal("fGripRotZDeg", 0.0f);
             const V off{ cal("fGripOffsetX", 0.0f), cal("fGripOffsetY", 0.0f), cal("fGripOffsetZ", 0.0f) };
             Xf c;
@@ -110,10 +124,11 @@ namespace vrshim::bridge
             // Left wand calibration chosen so that chain yields exactly the mirror of the right hand:
             //   C_L = M . C . G^T . Sz . E45 . G . E180^T   (column form; G = FRIK's glue, E = FRIK's Euler(0,a,0) = Ry(-a))
             {
-                const double gr[3][3] = { { -0.122, 0.990, 0.069 }, { 0.987, 0.114, 0.109 }, { 0.100, 0.081, -0.992 } };  // glue storage rows
+                const double gr[3][3] = { { -0.122, 0.990, 0.069 }, { 0.987, 0.114, 0.109 }, { 0.100, 0.081, -0.992 } }; // glue storage rows
                 M3 G;
                 for (int r = 0; r < 3; ++r)
-                    for (int col = 0; col < 3; ++col) G.m[r][col] = gr[col][r];
+                    for (int col = 0; col < 3; ++col)
+                        G.m[r][col] = gr[col][r];
                 G = Ortho(G);
                 M3 Sz;
                 Sz.m[2][2] = -1;
@@ -126,12 +141,19 @@ namespace vrshim::bridge
             }
             g_calib.loaded = true;
             logger::info("FRIK-flat: wand calibration from fo4flatvr.ini [Weapon]/[Hands]: rot ({:.1f},{:.1f},{:.1f}) deg, offset ({:.1f},{:.1f},{:.1f}) cm, {:.1f} units/m",
-                rx, ry, rz, off.x, off.y, off.z, a_upm);
+                rx,
+                ry,
+                rz,
+                off.x,
+                off.y,
+                off.z,
+                a_upm);
         }
 
         void Set(RE::NiNode* a_node, const Xf& a_parentWorld, const Xf& a_world)
         {
-            if (!a_node) return;
+            if (!a_node)
+                return;
             a_node->local = ToNi(Mul(Inv(a_parentWorld), a_world));
             a_node->world = ToNi(a_world);
         }
@@ -139,11 +161,13 @@ namespace vrshim::bridge
         // world of a child whose local is kept (the fixed offset nodes under the wands)
         void Propagate(RE::NiAVObject* a_obj, const RE::NiTransform& a_parentWorld)
         {
-            if (!a_obj) return;
+            if (!a_obj)
+                return;
             a_obj->world = ToNi(Mul(FromNi(a_parentWorld), FromNi(a_obj->local)));
             if (auto* node = a_obj->IsNode()) {
                 for (auto& child : node->children) {
-                    if (child) Propagate(child.get(), a_obj->world);
+                    if (child)
+                        Propagate(child.get(), a_obj->world);
                 }
             }
         }
@@ -155,7 +179,7 @@ namespace vrshim::bridge
         const auto get = mod ? reinterpret_cast<FO4FLATVR_GetFrikBridge_t>(::GetProcAddress(mod, "FO4FLATVR_GetFrikBridge")) : nullptr;
         g_api = get ? get(FO4FLATVR_FRIK_BRIDGE_VERSION) : nullptr;
         if (!g_api && get) {
-            g_api = get(3u);  // v4 (selfie) appends GetSelfie only: an older fo4flatvr.dll still serves v3
+            g_api = get(3u); // v4 (selfie) appends GetSelfie only: an older fo4flatvr.dll still serves v3
         }
         return g_api != nullptr;
     }
@@ -169,12 +193,16 @@ namespace vrshim::bridge
         return g_api->GetSelfie(&a_out) != 0;
     }
 
-    const FO4FlatVR_FrikBridge* api() noexcept { return g_api; }
+    const FO4FlatVR_FrikBridge* api() noexcept
+    {
+        return g_api;
+    }
 
     bool registerFrame(void (*a_cb)(void*), void* a_ctx) noexcept
     {
         return g_api && g_api->SetFrameCallback && g_api->SetFrameCallback(a_cb, a_ctx) != 0;
     }
+
     bool bodyEnabled() noexcept
     {
         return g_api && g_api->BodyEnabled && g_api->BodyEnabled() != 0;
@@ -190,19 +218,28 @@ namespace vrshim::bridge
         g_pwnZSmoothed.store(a_z, std::memory_order_relaxed);
         g_pwnZSmoothedFrame.store(g_frames, std::memory_order_release);
     }
-    void setDefaultPlayerWorldZ(float a_z) noexcept { g_pwnZDefault.store(a_z, std::memory_order_relaxed); }
+
+    void setDefaultPlayerWorldZ(float a_z) noexcept
+    {
+        g_pwnZDefault.store(a_z, std::memory_order_relaxed);
+    }
 
     bool gripWorld(const int a_side, float a_rot[3][3], float a_pos[3]) noexcept
     {
-        if (a_side < 0 || a_side > 1 || !g_gripWorldValid[a_side]) return false;
+        if (a_side < 0 || a_side > 1 || !g_gripWorldValid[a_side])
+            return false;
         const RE::NiTransform n = ToNi(g_gripWorld[a_side]);
         for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j) a_rot[i][j] = n.rotate.entry[i][j];
+            for (int j = 0; j < 3; ++j)
+                a_rot[i][j] = n.rotate.entry[i][j];
         a_pos[0] = n.translate.x, a_pos[1] = n.translate.y, a_pos[2] = n.translate.z;
         return true;
     }
 
-    bool pausedFrame() noexcept { return g_paused; }
+    bool pausedFrame() noexcept
+    {
+        return g_paused;
+    }
 
     int iniInt(const char* a_key, int a_def) noexcept
     {
@@ -210,20 +247,39 @@ namespace vrshim::bridge
         return path ? static_cast<int>(::GetPrivateProfileIntA("FRIK", a_key, a_def, path)) : a_def;
     }
 
-    const FO4FlatVR_Frame&      frame() noexcept { return g_frame; }
-    bool                        valid() noexcept { return g_valid; }
-    bool                        leftHanded() noexcept { return g_valid && g_frame.leftHanded; }
-    std::uint64_t               frameCount() noexcept { return g_frames; }
+    const FO4FlatVR_Frame& frame() noexcept
+    {
+        return g_frame;
+    }
+
+    bool valid() noexcept
+    {
+        return g_valid;
+    }
+
+    bool leftHanded() noexcept
+    {
+        return g_valid && g_frame.leftHanded;
+    }
+
+    std::uint64_t frameCount() noexcept
+    {
+        return g_frames;
+    }
 
     void onLoaded()
     {
         installCrashLog();
         const auto s = addressStats();
         const bool body = bodyEnabled();
-        logger::info("FRIK-flat initialised, {}/{} addresses resolved ({} low-confidence); bridge v{}; mode: {}", s.resolved, s.total, s.low,
-            g_api ? g_api->version : 0, body ? "full (bBody=1)" : "smooth movement only (bBody=0)");
+        logger::info("FRIK-flat initialised, {}/{} addresses resolved ({} low-confidence); bridge v{}; mode: {}",
+            s.resolved,
+            s.total,
+            s.low,
+            g_api ? g_api->version : 0,
+            body ? "full (bBody=1)" : "smooth movement only (bBody=0)");
         logAddressReport();
-        if (body && g_api && g_api->SetFrikActive) {  // C17: only with the body does fo4flatvr's floating gun step aside
+        if (body && g_api && g_api->SetFrikActive) { // C17: only with the body does fo4flatvr's floating gun step aside
             g_api->SetFrikActive(1);
         }
     }
@@ -231,14 +287,14 @@ namespace vrshim::bridge
     void frameUpdate()
     {
         // C18: smoothing ran this frame (FirstPersonState::Update, before this hook) -> its z, else the HMD offset alone
-        g_pwnZ = g_pwnZSmoothedFrame.load(std::memory_order_acquire) == g_frames ? g_pwnZSmoothed.load(std::memory_order_relaxed)
-                                                                                 : g_pwnZDefault.load(std::memory_order_relaxed);
+        g_pwnZ = g_pwnZSmoothedFrame.load(std::memory_order_acquire) == g_frames ? g_pwnZSmoothed.load(std::memory_order_relaxed) : g_pwnZDefault.load(std::memory_order_relaxed);
         ++g_frames;
         {
             const auto* ui = RE::UI::GetSingleton();
             g_paused = ui && ui->menuMode != 0;
         }
-        if (!g_api) return;
+        if (!g_api)
+            return;
         FO4FlatVR_Frame f{};
         f.size = sizeof(f);
         g_valid = g_api->GetFrame(&f) != 0 && f.headValid;
@@ -261,16 +317,18 @@ namespace vrshim::bridge
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* camera = RE::PlayerCamera::GetSingleton();
         auto* camRoot = camera ? camera->cameraRoot.get() : nullptr;
-        if (!player || !camRoot) return;
-        if (!vrNodesCreated()) createVrNodes();
-        selectFpHands();  // C19: real first-person hand/weapon nodes, or stand-ins without a drawn weapon
+        if (!player || !camRoot)
+            return;
+        if (!vrNodesCreated())
+            createVrNodes();
+        selectFpHands(); // C19: real first-person hand/weapon nodes, or stand-ins without a drawn weapon
         // C20: the third-person body is drawn in first person. FRIK's DoShow1stPerson patch (D78CFE) only acts when the view is
         // switched; loading a save already in first person returns early (1st/3rd cull flags already differ) and leaves Get3D(0)
         // app-culled (measured 15 Nov 14:05: cull3p=1). First person = the first-person root shown.
         // 16 Nov: only in camera states 0/4 (FRIK's body states, C23): in every other state (AAF / SCENE free camera 3, third
         // person 8, ...) nothing of FRIK-flat touches the player's body.
         const int camState = camera->currentState ? static_cast<int>(camera->currentState->id.get()) : -1;
-        if (auto* third = player->Get3D(false), *first = player->Get3D(true);
+        if (auto *third = player->Get3D(false), *first = player->Get3D(true);
             (camState == 0 || camState == 4) && third && first && third->GetAppCulled() && !first->GetAppCulled()) {
             third->SetAppCulled(false);
             static std::uint32_t s_unculls = 0;
@@ -285,7 +343,7 @@ namespace vrshim::bridge
         Xf cam = FromNi(camRoot->world);
         cam.s = 1.0;
         const M3 headR = GameRotFromXr(f.head.q);
-        const V  headP = GameVecFromXr(f.head.p) * upm;
+        const V headP = GameVecFromXr(f.head.p) * upm;
 
         // room: heading only, so the head's room-relative pose is its reference-space pose
         // C26 (user headset 15 Nov 15:02: a 180 stick turn left the body facing the old way): FRIK takes the body heading from
@@ -304,9 +362,9 @@ namespace vrshim::bridge
         room.t.z = player->data.location.z + g_pwnZ;
 
         const Xf identity{};
-        Xf       pwn{};
+        Xf pwn{};
         pwn.t.z = g_pwnZ;
-        Set(n->playerWorldNode, identity, pwn);  // detached root: local = world = lift
+        Set(n->playerWorldNode, identity, pwn); // detached root: local = world = lift
         Set(n->roomNode, pwn, room);
         Set(n->hmdNode, room, cam);
         Set(n->offscreenHmdNode, room, cam);
@@ -317,19 +375,21 @@ namespace vrshim::bridge
         Propagate(n->headLightParentNode, n->hmdNode->world);
 
         const bool lh = f.leftHanded != 0;
-        for (int side = 0; side < 2; ++side) {  // 0 left, 1 right
+        for (int side = 0; side < 2; ++side) { // 0 left, 1 right
             const auto& h = f.hands[side];
             g_gripWorldValid[side] = h.gripInHead.valid != 0;
-            if (!h.gripInHead.valid) continue;
+            if (!h.gripInHead.valid)
+                continue;
             g_gripWorld[side] = Mul(cam, HandXf(h.gripInHead, upm));
             const bool primary = (side == 1) != lh;
-            auto*      wand = primary ? n->primaryWandNode : n->secondaryWandNode;
-            const Xf&  cal = side == 1 ? g_calib.right : (!lh && g_calib.leftMirrorOn ? g_calib.leftMirror : g_calib.left);  // C34
-            const Xf   world = Mul(Mul(cam, HandXf(h.gripInHead, upm)), cal);
+            auto* wand = primary ? n->primaryWandNode : n->secondaryWandNode;
+            const Xf& cal = side == 1 ? g_calib.right : (!lh && g_calib.leftMirrorOn ? g_calib.leftMirror : g_calib.left); // C34
+            const Xf world = Mul(Mul(cam, HandXf(h.gripInHead, upm)), cal);
             Set(wand, room, world);
             if (wand && wand->children.size()) {
                 for (auto& child : wand->children) {
-                    if (child) Propagate(child.get(), wand->world);
+                    if (child)
+                        Propagate(child.get(), wand->world);
                 }
             }
         }
@@ -341,7 +401,16 @@ namespace vrshim::bridge
             const auto& hp = n->hmdNode->local.translate;
             const auto& pw = n->primaryWandNode->world.translate;
             logger::info("FRIK-flat nodes #{}: hmd in room ({:.1f},{:.1f},{:.1f}) eye height {:.1f}u, room yaw {:.1f} deg, primary wand world ({:.1f},{:.1f},{:.1f}), xr seq {}",
-                g_posed, hp.x, hp.y, hp.z, hp.z, roomYaw * 57.29578, pw.x, pw.y, pw.z, f.seq);
+                g_posed,
+                hp.x,
+                hp.y,
+                hp.z,
+                hp.z,
+                roomYaw * 57.29578,
+                pw.x,
+                pw.y,
+                pw.z,
+                f.seq);
         }
     }
 }

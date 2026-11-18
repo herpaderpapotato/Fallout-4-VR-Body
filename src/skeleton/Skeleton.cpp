@@ -275,7 +275,7 @@ namespace frik
             return;
         }
         if (_flatHeight <= 0.0f) {
-            _flatHeight = h;  // first standing sample after skeleton init: no ramp from the default
+            _flatHeight = h; // first standing sample after skeleton init: no ramp from the default
         } else {
             const float dt = std::clamp(_frameTime, 0.0f, 0.25f);
             _flatHeight += (h - _flatHeight) * (1.0f - std::exp(-dt / 4.0f));
@@ -283,8 +283,11 @@ namespace frik
         const float eff = playerHeightFlat();
         if (std::abs(eff - _flatHeightLogged) > 2.0f) {
             _flatHeightLogged = eff;
-            logger::info("FRIK-flat C36: body height {:.1f} u (camera standing h {:.1f}; FRIK.toml PlayerHeight {:.1f}) -> skeleton scale {:.3f}", eff, h,
-                g_config.playerHeight, eff / DEFAULT_CAMERA_HEIGHT);
+            logger::info("FRIK-flat C36: body height {:.1f} u (camera standing h {:.1f}; FRIK.toml PlayerHeight {:.1f}) -> skeleton scale {:.3f}",
+                eff,
+                h,
+                g_config.playerHeight,
+                eff / DEFAULT_CAMERA_HEIGHT);
         }
     }
 #endif

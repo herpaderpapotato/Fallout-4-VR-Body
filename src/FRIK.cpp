@@ -1,5 +1,6 @@
 #include "FRIK.h"
 
+#include "../../plugin/src/plugin/FrikBridgeApi.h" // FRIK-flat selfie test flag
 #include "Config.h"
 #include "ExternalAuthority.h"
 #include "GameHooks.h"
@@ -21,19 +22,19 @@
 #include "smooth-movement/SmoothMovementVR.h"
 #include "utils.h"
 #include "vrcf/VRControllersManager.h"
-#include "vrui/UIManager.h"
 #include "vrshim/Bridge.h" // FRIK-flat C12
-#include "fo4flatvr/FrikBridgeApi.h" // FRIK-flat selfie test flag
+#include "vrshim/StableSkin.h" // FRIK-flat C23
+#include "fo4flatvr/FrikBridgeApi.h"
 #include "vrshim/VrNodes.h" // FRIK-flat C17
 #include "vrshim/XfMath.h" // FRIK-flat C22
-#include "vrshim/StableSkin.h" // FRIK-flat C23
+#include "vrui/UIManager.h"
 
 using namespace common;
 
 // This is the entry point to the mod.
 extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a_skse, F4SE::PluginInfo* a_info)
 {
-    #ifdef FRIK_FLAT // C2: the flat build loads on the flat runtime only
+#ifdef FRIK_FLAT // C2: the flat build loads on the flat runtime only
     if (a_skse->IsEditor() || a_skse->RuntimeVersion() != F4SE::RUNTIME_LATEST) {
 #else
     if (a_skse->IsEditor() || !REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
@@ -333,7 +334,7 @@ namespace frik
         // furniture: fo4flatvr's cinema screen) show the engine's own body
         {
             const auto cam = f4vr::getPlayerCamera();
-            const int  cs = cam && cam->currentState ? static_cast<int>(cam->currentState->id.get()) : -1;
+            const int cs = cam && cam->currentState ? static_cast<int>(cam->currentState->id.get()) : -1;
             const bool fp = cs == 0 || cs == 4;
             if (!fp) {
                 // C35 (user 15 Nov: the player's head must be visible in every view that is not at the head): FRIK's head
@@ -345,7 +346,7 @@ namespace frik
                 if (_flatSkinActive) {
                     const auto pl = RE::PlayerCharacter::GetSingleton();
                     vrshim::skin::restore(pl->loadedData && pl->loadedData->data3D ? pl->loadedData->data3D.get() : nullptr);
-                    flatTrackRestore(cs);  // C37: what FRIK left on bones the engine does not re-animate goes back
+                    flatTrackRestore(cs); // C37: what FRIK left on bones the engine does not re-animate goes back
                     _flatSkinActive = false;
                     logger::info("FRIK-flat: camera state {} (not first person): body left to the engine", cs);
                 }
@@ -433,7 +434,7 @@ namespace frik
 #ifdef FRIK_FLAT // C22 diag: what the engine changed in the body tree since FRIK's last frame (render may read it in between)
         if (auto* tree = f4vr::getFlattenedBoneTree(); tree && tree->transforms && static_cast<int>(_flatEndOfFrame.size()) == tree->numTransforms) {
             float mx = 0.0f;
-            int   mi = -1, n = 0;
+            int mi = -1, n = 0;
             const auto rootT = tree->transforms[0].world.translate;
             for (int i = 0; i < tree->numTransforms; ++i) {
                 const float d = MatrixUtils::vec3Len((tree->transforms[i].world.translate - rootT) - (_flatEndOfFrame[i] - _flatEndOfFrame[0]));
@@ -451,13 +452,15 @@ namespace frik
                 s_legT = std::chrono::steady_clock::now();
                 auto idx = [&](const char* nm) {
                     for (int i = 0; i < tree->numTransforms; ++i) {
-                        if (tree->transforms[i].name.c_str() && _stricmp(tree->transforms[i].name.c_str(), nm) == 0) return i;
+                        if (tree->transforms[i].name.c_str() && _stricmp(tree->transforms[i].name.c_str(), nm) == 0)
+                            return i;
                     }
                     return -1;
                 };
                 auto knee = [&](const char* th, const char* ca, const char* fo) {
                     const int a = idx(th), b = idx(ca), c = idx(fo);
-                    if (a < 0 || b < 0 || c < 0) return -1.0f;
+                    if (a < 0 || b < 0 || c < 0)
+                        return -1.0f;
                     const auto u = MatrixUtils::vec3Norm(tree->transforms[b].world.translate - tree->transforms[a].world.translate);
                     const auto v = MatrixUtils::vec3Norm(tree->transforms[c].world.translate - tree->transforms[b].world.translate);
                     return std::acos(std::clamp(MatrixUtils::vec3Dot(u, v), -1.0f, 1.0f)) * 57.29578f;
@@ -465,19 +468,26 @@ namespace frik
                 std::string helpers;
                 for (int i = 0; i < tree->numTransforms; ++i) {
                     const auto& b = tree->transforms[i];
-                    if (b.parPos < 0 || b.parPos >= tree->numTransforms) continue;
+                    if (b.parPos < 0 || b.parPos >= tree->numTransforms)
+                        continue;
                     const char* pn = tree->transforms[b.parPos].name.c_str();
                     const char* nm = b.name.c_str();
-                    if (!nm) continue;
+                    if (!nm)
+                        continue;
                     const bool skirt = std::strstr(nm, "Skirt") || std::strstr(nm, "skirt") || std::strstr(nm, "Coat") || std::strstr(nm, "Cloth");
-                    if (!skirt && (!pn || std::strstr(nm, "_skin"))) continue;
-                    if (!skirt && !(std::strstr(pn, "Leg_") || _stricmp(pn, "Pelvis") == 0)) continue;
+                    if (!skirt && (!pn || std::strstr(nm, "_skin")))
+                        continue;
+                    if (!skirt && !(std::strstr(pn, "Leg_") || _stricmp(pn, "Pelvis") == 0))
+                        continue;
                     const auto& r = b.local.rotate;
                     const float tr = std::clamp((r.entry[0][0] + r.entry[1][1] + r.entry[2][2] - 1.0f) * 0.5f, -1.0f, 1.0f);
                     helpers += std::format(" {}<{}{}:{:.0f}", nm, pn ? pn : "-", b.refNode ? "" : "*", std::acos(tr) * 57.29578f);
                 }
                 logger::info("FRIK-flat legs (engine pose, frame start): knee L {:.0f} R {:.0f} deg | {} tree bones | pelvis/leg children + skirt bones (local rot deg):{}",
-                    knee("LLeg_Thigh", "LLeg_Calf", "LLeg_Foot"), knee("RLeg_Thigh", "RLeg_Calf", "RLeg_Foot"), tree->numTransforms, helpers);
+                    knee("LLeg_Thigh", "LLeg_Calf", "LLeg_Foot"),
+                    knee("RLeg_Thigh", "RLeg_Calf", "RLeg_Foot"),
+                    tree->numTransforms,
+                    helpers);
             }
             _flatBetweenMax = mx;
             _flatBetweenCount = n;
@@ -515,9 +525,9 @@ namespace frik
         flatTransferLegHelpers();
         flatPropagateNodelessBones();
         if (const auto pl = RE::PlayerCharacter::GetSingleton(); pl && pl->loadedData && pl->loadedData->data3D) {
-            vrshim::skin::refresh(pl->loadedData->data3D.get());  // the render skins this copy, not the bones the next update animates
+            vrshim::skin::refresh(pl->loadedData->data3D.get()); // the render skins this copy, not the bones the next update animates
         }
-        flatTrackFrameEnd();  // C37
+        flatTrackFrameEnd(); // C37
 #endif
         _skelly->latchRenderedWrists();
 
@@ -568,7 +578,7 @@ namespace frik
             return false;
         }
         if (!vrshim::vrNodesCreated()) {
-            vrshim::createVrNodes();  // SmoothMovementVR writes PlayerWorldNode (a detached stand-in node on flat)
+            vrshim::createVrNodes(); // SmoothMovementVR writes PlayerWorldNode (a detached stand-in node on flat)
         }
         // no camera update for a while (loading screen, menu with the camera stopped, third person): start from the current
         // position like FRIK's game-session reset, instead of gliding from where the player was before
@@ -612,7 +622,9 @@ namespace frik
         const auto root = f4vr::getRootNode();
         const auto cam = camera->cameraRoot->world.translate;
         const float feet = player->data.location.z;
-        auto z = [](const RE::NiAVObject* o) { return o ? o->world.translate.z : -1.0f; };
+        auto z = [](const RE::NiAVObject* o) {
+            return o ? o->world.translate.z : -1.0f;
+        };
         auto dist = [](const RE::NiAVObject* a, const RE::NiAVObject* b) {
             return a && b ? MatrixUtils::vec3Len(a->world.translate - b->world.translate) : -1.0f;
         };
@@ -633,34 +645,55 @@ namespace frik
         {
             const RE::NiAVObject* c0 = fp && !fp->children.empty() ? fp->children[0].get() : nullptr;
             const auto* rtti = c0 ? c0->GetRTTI() : nullptr;
-            logger::info("FRIK-flat body: fp children={} child0='{}' rtti={} weaponDrawn={}", fp ? fp->children.size() : 0,
-                c0 && c0->name.c_str() ? c0->name.c_str() : "-", rtti && rtti->GetName() ? rtti->GetName() : "-", f4vr::isWeaponDrawn());
+            logger::info("FRIK-flat body: fp children={} child0='{}' rtti={} weaponDrawn={}",
+                fp ? fp->children.size() : 0,
+                c0 && c0->name.c_str() ? c0->name.c_str() : "-",
+                rtti && rtti->GetName() ? rtti->GetName() : "-",
+                f4vr::isWeaponDrawn());
         }
         logger::info("FRIK-flat body: nodeless bones {} re-parented, max correction {:.1f} u ({}); stable skin: {} instances, {} bones, {} rebuilds",
-            _flatNodelessCount, _flatNodelessMaxErr, _flatNodelessMaxName, vrshim::skin::stats().instances, vrshim::skin::stats().bones,
+            _flatNodelessCount,
+            _flatNodelessMaxErr,
+            _flatNodelessMaxName,
+            vrshim::skin::stats().instances,
+            vrshim::skin::stats().bones,
             vrshim::skin::stats().rebuilds);
         {
             // C26 heading check: body (third-person root +Y), camera, actor heading; degrees, same convention
-            auto yawOf = [](const RE::NiMatrix3& r) { return std::atan2(-r.entry[1][0], r.entry[1][1]) * 57.29578f; };
+            auto yawOf = [](const RE::NiMatrix3& r) {
+                return std::atan2(-r.entry[1][0], r.entry[1][1]) * 57.29578f;
+            };
             const float bodyYaw = root ? yawOf(root->world.rotate) : 0.0f;
             const float camYaw = yawOf(camera->cameraRoot->world.rotate);
             float d = bodyYaw - camYaw;
-            while (d > 180.0f) d -= 360.0f;
-            while (d < -180.0f) d += 360.0f;
+            while (d > 180.0f)
+                d -= 360.0f;
+            while (d < -180.0f)
+                d += 360.0f;
             // hands in the camera's yaw frame (x right, y forward, z up; should not change with a stick/snap turn)
             auto inCam = [&](const RE::NiAVObject* o) {
-                if (!o) return std::string("-");
+                if (!o)
+                    return std::string("-");
                 const auto& r = camera->cameraRoot->world.rotate;
                 const RE::NiPoint3 fwd = MatrixUtils::vec3Norm(RE::NiPoint3(r.entry[1][0], r.entry[1][1], 0));
                 const RE::NiPoint3 right(fwd.y, -fwd.x, 0);
                 const auto dv = o->world.translate - camera->cameraRoot->world.translate;
-                const auto& w = o->world.rotate;  // hand forward (+Y) and up (+Z) axes in the same yaw frame
-                auto loc = [&](const RE::NiPoint3& v) { return RE::NiPoint3(v.x * right.x + v.y * right.y, v.x * fwd.x + v.y * fwd.y, v.z); };
+                const auto& w = o->world.rotate; // hand forward (+Y) and up (+Z) axes in the same yaw frame
+                auto loc = [&](const RE::NiPoint3& v) {
+                    return RE::NiPoint3(v.x * right.x + v.y * right.y, v.x * fwd.x + v.y * fwd.y, v.z);
+                };
                 const auto p = loc(dv), f = loc(RE::NiPoint3(w.entry[1][0], w.entry[1][1], w.entry[1][2])), u = loc(RE::NiPoint3(w.entry[2][0], w.entry[2][1], w.entry[2][2]));
                 return std::format("p({:.1f},{:.1f},{:.1f}) y({:.2f},{:.2f},{:.2f}) z({:.2f},{:.2f},{:.2f})", p.x, p.y, p.z, f.x, f.y, f.z, u.x, u.y, u.z);
             };
             logger::info("FRIK-flat heading: body {:.1f} cam {:.1f} body-cam {:.1f} actor {:.1f} deg | grip from gun {}/{} frames | inCam L3p {} R3p {}",
-                bodyYaw, camYaw, d, player->data.angle.z * 57.29578f, vrshim::gripFromGunFrames(), vrshim::gripFrames(), inCam(tpL), inCam(tpR));
+                bodyYaw,
+                camYaw,
+                d,
+                player->data.angle.z * 57.29578f,
+                vrshim::gripFromGunFrames(),
+                vrshim::gripFrames(),
+                inCam(tpL),
+                inCam(tpR));
 
             // C32 diag (wrist invariant): each stage of the hand's chain as a rotation relative to the raw controller grip
             // (camera . grip-in-head), rotation vector in degrees. With the controllers still in tracking space none of these may
@@ -680,7 +713,8 @@ namespace frik
                 };
                 auto* tree = f4vr::getFlattenedBoneTree();
                 auto treeWorld = [&](const char* nm, Xf& out) {
-                    if (!tree || !tree->transforms) return false;
+                    if (!tree || !tree->transforms)
+                        return false;
                     for (int i = 0; i < tree->numTransforms; ++i) {
                         if (tree->transforms[i].name.c_str() && _stricmp(tree->transforms[i].name.c_str(), nm) == 0) {
                             out = FromNi(tree->transforms[i].world);
@@ -700,9 +734,12 @@ namespace frik
                     }
                     RE::NiTransform gn;
                     for (int i = 0; i < 3; ++i)
-                        for (int j = 0; j < 3; ++j) gn.rotate.entry[i][j] = gr[i][j];
+                        for (int j = 0; j < 3; ++j)
+                            gn.rotate.entry[i][j] = gr[i][j];
                     const M3 gInv = T(FromNi(gn).R);
-                    auto rel = [&](const RE::NiAVObject* o) { return o ? rv(Mul(gInv, FromNi(o->world).R)) : std::string("-"); };
+                    auto rel = [&](const RE::NiAVObject* o) {
+                        return o ? rv(Mul(gInv, FromNi(o->world).R)) : std::string("-");
+                    };
                     const bool primary = isLeft == lh;
                     const RE::NiAVObject* wand = nodes ? (primary ? nodes->primaryWandNode : nodes->secondaryWandNode) : nullptr;
                     const RE::NiAVObject* off = nodes ? (primary ? nodes->primaryWeaponOffsetNode : nodes->secondaryMeleeWeaponOffsetNode) : nullptr;
@@ -713,27 +750,73 @@ namespace frik
                     const bool haveTree = treeWorld(isLeft ? "LArm_Hand" : "RArm_Hand", tw);
                     std::string axes = "-";
                     if (haveTree) {
-                        const M3 h = Mul(T(camX.R), tw.R);              // tree hand in the camera frame (columns = axes)
-                        const M3 g = Mul(T(camX.R), FromNi(gn).R);      // grip in the camera frame
-                        axes = std::format("hX({:.2f},{:.2f},{:.2f}) hZ({:.2f},{:.2f},{:.2f}) gX({:.2f},{:.2f},{:.2f}) g-Z({:.2f},{:.2f},{:.2f})", h.m[0][0], h.m[1][0],
-                            h.m[2][0], h.m[0][2], h.m[1][2], h.m[2][2], g.m[0][0], g.m[1][0], g.m[2][0], -g.m[0][2], -g.m[1][2], -g.m[2][2]);
+                        const M3 h = Mul(T(camX.R), tw.R); // tree hand in the camera frame (columns = axes)
+                        const M3 g = Mul(T(camX.R), FromNi(gn).R); // grip in the camera frame
+                        axes = std::format("hX({:.2f},{:.2f},{:.2f}) hZ({:.2f},{:.2f},{:.2f}) gX({:.2f},{:.2f},{:.2f}) g-Z({:.2f},{:.2f},{:.2f})",
+                            h.m[0][0],
+                            h.m[1][0],
+                            h.m[2][0],
+                            h.m[0][2],
+                            h.m[1][2],
+                            h.m[2][2],
+                            g.m[0][0],
+                            g.m[1][0],
+                            g.m[2][0],
+                            -g.m[0][2],
+                            -g.m[1][2],
+                            -g.m[2][2]);
                     }
-                    line += std::format("{} {} wand{} off{} tgt{} node{} tree{} fa3{} ax {}", isLeft ? "" : " |", isLeft ? "L" : "R", rel(wand), rel(off), rel(tgt), rel(nd),
-                        haveTree ? rv(Mul(gInv, tw.R)) : std::string("-"), rel(fa3), axes);
+                    line += std::format("{} {} wand{} off{} tgt{} node{} tree{} fa3{} ax {}",
+                        isLeft ? "" : " |",
+                        isLeft ? "L" : "R",
+                        rel(wand),
+                        rel(off),
+                        rel(tgt),
+                        rel(nd),
+                        haveTree ? rv(Mul(gInv, tw.R)) : std::string("-"),
+                        rel(fa3),
+                        axes);
                 }
-                logger::info("FRIK-flat wrist: cam {:.1f} body {:.1f} actor {:.1f} drawn {} unarmed {}{}", camYaw, bodyYaw, player->data.angle.z * 57.29578f,
-                    f4vr::isWeaponDrawn() ? 1 : 0, f4vr::isUnarmedWeaponDrawn() ? 1 : 0, line);
+                logger::info("FRIK-flat wrist: cam {:.1f} body {:.1f} actor {:.1f} drawn {} unarmed {}{}",
+                    camYaw,
+                    bodyYaw,
+                    player->data.angle.z * 57.29578f,
+                    f4vr::isWeaponDrawn() ? 1 : 0,
+                    f4vr::isUnarmedWeaponDrawn() ? 1 : 0,
+                    line);
             }
         }
-        logger::info("FRIK-flat body: R hand {} wpnOff {} | L hand {} | 3p R {} L {} | cam ({:.1f},{:.1f},{:.1f})", fmtP(fpR),
-            fmtP(nodes ? nodes->primaryWeaponOffsetNode : nullptr), fmtP(fpL), fmtP(tpR), fmtP(tpL), cam.x, cam.y, cam.z);
-        logger::info("FRIK-flat body: skel={} standIn={} cull3p={} cull3pRoot={} cull1p={} feet={:.1f} cam={:.1f} eye={:.1f} pwnZ={:.1f} bodyZ={:.1f} rootZ={:.1f} "
-                     "comZ={:.1f} neckZ={:.1f} headZ={:.1f} neckXY={:.1f} scale={:.3f} | R wand-fp={:.1f} fp-3p={:.1f} | L wand-fp={:.1f} fp-3p={:.1f}",
-            _skelly ? 1 : 0, vrshim::fpHands().standIn ? 1 : 0, third ? (third->GetAppCulled() ? 1 : 0) : -1, root ? (root->GetAppCulled() ? 1 : 0) : -1,
-            first ? (first->GetAppCulled() ? 1 : 0) : -1, feet, cam.z, cam.z - feet, pwnZ,
-            player->loadedData && player->loadedData->data3D ? player->loadedData->data3D->world.translate.z : -1.0f, z(root), z(com), z(neck), z(head), neckXY,
+        logger::info("FRIK-flat body: R hand {} wpnOff {} | L hand {} | 3p R {} L {} | cam ({:.1f},{:.1f},{:.1f})",
+            fmtP(fpR),
+            fmtP(nodes ? nodes->primaryWeaponOffsetNode : nullptr),
+            fmtP(fpL),
+            fmtP(tpR),
+            fmtP(tpL),
+            cam.x,
+            cam.y,
+            cam.z);
+        logger::info(
+            "FRIK-flat body: skel={} standIn={} cull3p={} cull3pRoot={} cull1p={} feet={:.1f} cam={:.1f} eye={:.1f} pwnZ={:.1f} bodyZ={:.1f} rootZ={:.1f} "
+            "comZ={:.1f} neckZ={:.1f} headZ={:.1f} neckXY={:.1f} scale={:.3f} | R wand-fp={:.1f} fp-3p={:.1f} | L wand-fp={:.1f} fp-3p={:.1f}",
+            _skelly ? 1 : 0,
+            vrshim::fpHands().standIn ? 1 : 0,
+            third ? (third->GetAppCulled() ? 1 : 0) : -1,
+            root ? (root->GetAppCulled() ? 1 : 0) : -1,
+            first ? (first->GetAppCulled() ? 1 : 0) : -1,
+            feet,
+            cam.z,
+            cam.z - feet,
+            pwnZ,
+            player->loadedData && player->loadedData->data3D ? player->loadedData->data3D->world.translate.z : -1.0f,
+            z(root),
+            z(com),
+            z(neck),
+            z(head),
+            neckXY,
             root ? root->local.scale : 0.0f,
-            nodes ? dist(nodes->primaryWeaponOffsetNode, fpR) : -1.0f, dist(fpR, tpR), nodes ? dist(nodes->secondaryMeleeWeaponOffsetNode, fpL) : -1.0f,
+            nodes ? dist(nodes->primaryWeaponOffsetNode, fpR) : -1.0f,
+            dist(fpR, tpR),
+            nodes ? dist(nodes->secondaryMeleeWeaponOffsetNode, fpL) : -1.0f,
             dist(fpL, tpL));
     }
 #endif
@@ -813,9 +896,20 @@ namespace frik
         const auto camera = f4vr::getPlayerCamera();
         const auto cameraRoot = camera && camera->cameraRoot ? camera->cameraRoot.get() : nullptr;
 #ifdef FRIK_FLAT // C15: name the failing readiness check (rate-limited) while bringing the skeleton up on flat
-        logger::sample(5000, "FRIK-flat readiness: playerRoot={} root={} worldRoot={} rootParent={} common={} playerNodes={} tree={} fp={} rHand={} lHand={} weapon={} camRoot={}",
-            playerRootNode != nullptr, rootNode != nullptr, worldRootNode != nullptr, rootNode && rootNode->parent, commonNode != nullptr, playerNodes != nullptr,
-            flattenedTree != nullptr, firstPersonSkeleton != nullptr, rightHand != nullptr, leftHand != nullptr, weaponNode != nullptr, cameraRoot != nullptr);
+        logger::sample(5000,
+            "FRIK-flat readiness: playerRoot={} root={} worldRoot={} rootParent={} common={} playerNodes={} tree={} fp={} rHand={} lHand={} weapon={} camRoot={}",
+            playerRootNode != nullptr,
+            rootNode != nullptr,
+            worldRootNode != nullptr,
+            rootNode && rootNode->parent,
+            commonNode != nullptr,
+            playerNodes != nullptr,
+            flattenedTree != nullptr,
+            firstPersonSkeleton != nullptr,
+            rightHand != nullptr,
+            leftHand != nullptr,
+            weaponNode != nullptr,
+            cameraRoot != nullptr);
 #endif
 
         if (!playerRootNode || !rootNode || !worldRootNode) {
@@ -963,9 +1057,12 @@ namespace frik
         int thigh[2] = { -1, -1 };
         for (int i = 0; i < tree->numTransforms; ++i) {
             const char* nm = tree->transforms[i].name.c_str();
-            if (!nm) continue;
-            if (_stricmp(nm, "LLeg_Thigh") == 0) thigh[0] = i;
-            else if (_stricmp(nm, "RLeg_Thigh") == 0) thigh[1] = i;
+            if (!nm)
+                continue;
+            if (_stricmp(nm, "LLeg_Thigh") == 0)
+                thigh[0] = i;
+            else if (_stricmp(nm, "RLeg_Thigh") == 0)
+                thigh[1] = i;
         }
         if (thigh[0] < 0 || thigh[1] < 0) {
             return;
@@ -974,7 +1071,7 @@ namespace frik
         for (int side = 0; side < 2; ++side) {
             const int t = thigh[side];
             const auto& tb = tree->transforms[t];
-            delta[side] = Mul(FromNi(tb.refNode ? tb.refNode->local : tb.local).R, T(FromNi(_flatEngineLocal[t]).R));  // FRIK . anim^-1 (pelvis frame)
+            delta[side] = Mul(FromNi(tb.refNode ? tb.refNode->local : tb.local).R, T(FromNi(_flatEngineLocal[t]).R)); // FRIK . anim^-1 (pelvis frame)
         }
         int n = 0;
         for (int i = 0; i < tree->numTransforms; ++i) {
@@ -985,17 +1082,17 @@ namespace frik
             }
             const char* pn = tree->transforms[b.parPos].name.c_str();
             if (!pn || _stricmp(pn, "Pelvis") != 0) {
-                continue;  // only node-less helpers hanging directly under the pelvis
+                continue; // only node-less helpers hanging directly under the pelvis
             }
             const char c0 = static_cast<char>(std::toupper(static_cast<unsigned char>(nm[0])));
-            const int  side = c0 == 'L' ? 0 : c0 == 'R' ? 1 : -1;
+            const int side = c0 == 'L' ? 0 : c0 == 'R' ? 1 : -1;
             if (side < 0) {
                 continue;
             }
             Xf l = FromNi(_flatEngineLocal[i]);
             l.R = Mul(delta[side], l.R);
             b.local = ToNi(l);
-            if (b.refNode) {  // an outfit attached a node for it: the node is what UpdateBoneArray copies; world from the pelvis now
+            if (b.refNode) { // an outfit attached a node for it: the node is what UpdateBoneArray copies; world from the pelvis now
                 b.refNode->local = b.local;
                 b.world = ToNi(Mul(FromNi(tree->transforms[b.parPos].world), l));
                 b.refNode->world = b.world;
@@ -1010,18 +1107,26 @@ namespace frik
 #ifdef FRIK_FLAT // C37
     namespace
     {
-        RE::NiTransform& flatBoneLocal(f4vr::BSFlattenedBoneTree::BoneTransforms& a_b) { return a_b.refNode ? a_b.refNode->local : a_b.local; }
+        RE::NiTransform& flatBoneLocal(f4vr::BSFlattenedBoneTree::BoneTransforms& a_b)
+        {
+            return a_b.refNode ? a_b.refNode->local : a_b.local;
+        }
+
         bool sameRT(const RE::NiTransform& a, const RE::NiTransform& b)
         {
             return std::memcmp(&a.rotate, &b.rotate, sizeof(a.rotate)) == 0 && std::memcmp(&a.translate, &b.translate, sizeof(a.translate)) == 0;
         }
-        bool sameS(const RE::NiTransform& a, const RE::NiTransform& b) { return std::memcmp(&a.scale, &b.scale, sizeof(a.scale)) == 0; }
+
+        bool sameS(const RE::NiTransform& a, const RE::NiTransform& b)
+        {
+            return std::memcmp(&a.scale, &b.scale, sizeof(a.scale)) == 0;
+        }
+
         bool restoreOn()
         {
             static const bool s_on = [] {
                 const bool on = vrshim::bridge::iniInt("bRestoreEngineBody", 1) != 0;
-                logger::info("FRIK-flat C37: leaving first person restores what FRIK left on bones the engine does not animate: {} ([FRIK] bRestoreEngineBody)",
-                    on ? "on" : "OFF");
+                logger::info("FRIK-flat C37: leaving first person restores what FRIK left on bones the engine does not animate: {} ([FRIK] bRestoreEngineBody)", on ? "on" : "OFF");
                 return on;
             }();
             return s_on;
@@ -1063,7 +1168,7 @@ namespace frik
         const bool track = restoreOn();
         _flatEngineLocal.resize(n);
         for (int i = 0; i < n; ++i) {
-            auto&       t = _flatTrack[i];
+            auto& t = _flatTrack[i];
             const auto& cur = flatBoneLocal(tree->transforms[i]);
             if (!track || !t.hasWritten) {
                 t.anim = cur;
@@ -1103,12 +1208,12 @@ namespace frik
         if (!_flatTrackActive) {
             return;
         }
-        _flatTrackActive = false;  // the next first-person frame takes the engine's pose afresh
+        _flatTrackActive = false; // the next first-person frame takes the engine's pose afresh
         auto* tree = f4vr::getFlattenedBoneTree();
         if (!restoreOn() || !tree || tree != _flatTrackTree || static_cast<int>(_flatTrack.size()) != tree->numTransforms) {
             return;
         }
-        int         nRT = 0, nS = 0, animated = 0;
+        int nRT = 0, nS = 0, animated = 0;
         std::string names, animNames;
         for (int i = 0; i < tree->numTransforms; ++i) {
             auto& t = _flatTrack[i];
@@ -1120,7 +1225,7 @@ namespace frik
             if (!t.hasWritten) {
                 continue;
             }
-            auto&      l = flatBoneLocal(b);
+            auto& l = flatBoneLocal(b);
             const bool doRT = !t.rtAnimated && sameRT(l, t.written) && !sameRT(l, t.base);
             const bool doS = !t.sAnimated && sameS(l, t.written) && !sameS(l, t.base);
             if (!doRT && !doS) {
@@ -1145,16 +1250,23 @@ namespace frik
         float bodyMoved = -1.0f;
         if (const auto pl = RE::PlayerCharacter::GetSingleton(); _flatBodyHasWritten && pl && pl->loadedData && pl->loadedData->data3D) {
             auto& lt = pl->loadedData->data3D->local.translate;
-            if (lt.x == _flatBodyWritten.x && lt.y == _flatBodyWritten.y) {  // not set from the actor since FRIK's last write
+            if (lt.x == _flatBodyWritten.x && lt.y == _flatBodyWritten.y) { // not set from the actor since FRIK's last write
                 bodyMoved = std::hypot(lt.x - pl->data.location.x, lt.y - pl->data.location.y);
                 lt.x = pl->data.location.x;
                 lt.y = pl->data.location.y;
             }
         }
         _flatBodyHasWritten = false;
-        logger::info("FRIK-flat C37: camera state {}: {} of {} bones animated by the engine in first person:{} | restored rot/pos {} scale {}:{} | 3D root x/y "
-                     "back to the actor: {}",
-            a_camState, animated, tree->numTransforms, animNames.empty() ? " -" : animNames, nRT, nS, names.empty() ? " -" : names,
+        logger::info(
+            "FRIK-flat C37: camera state {}: {} of {} bones animated by the engine in first person:{} | restored rot/pos {} scale {}:{} | 3D root x/y "
+            "back to the actor: {}",
+            a_camState,
+            animated,
+            tree->numTransforms,
+            animNames.empty() ? " -" : animNames,
+            nRT,
+            nS,
+            names.empty() ? " -" : names,
             bodyMoved < 0.0f ? std::string("not needed (set by the engine)") : std::format("{:.1f} u", bodyMoved));
     }
 #endif
@@ -1173,7 +1285,7 @@ namespace frik
         }
         using namespace vrshim::xf;
         float maxErr = 0.0f;
-        int   maxIdx = -1, count = 0;
+        int maxIdx = -1, count = 0;
         for (int i = 0; i < tree->numTransforms; ++i) {
             auto& b = tree->transforms[i];
             if (b.refNode || b.parPos < 0 || b.parPos >= tree->numTransforms || b.parPos == i) {
@@ -1203,7 +1315,7 @@ namespace frik
         }
         s_last = now;
         float nodeMax = 0.0f;
-        int   nodeIdx = -1, withNode = 0;
+        int nodeIdx = -1, withNode = 0;
         for (int i = 0; i < tree->numTransforms; ++i) {
             const auto& b = tree->transforms[i];
             if (!b.refNode) {
@@ -1216,13 +1328,12 @@ namespace frik
             }
         }
         std::string chain;
-        for (const char* nm : { "RArm_Collarbone", "RArm_UpperArm", "RArm_UpperTwist1", "RArm_UpperTwist2", "RArm_ForeArm1", "RArm_ForeArm2",
-                 "RArm_ForeArm3", "RArm_Hand", "SPINE2", "Chest" }) {
+        for (const char* nm :
+            { "RArm_Collarbone", "RArm_UpperArm", "RArm_UpperTwist1", "RArm_UpperTwist2", "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand", "SPINE2", "Chest" }) {
             for (int i = 0; i < tree->numTransforms; ++i) {
                 const auto& b = tree->transforms[i];
                 if (b.name.c_str() && _stricmp(b.name.c_str(), nm) == 0) {
-                    chain += std::format(" {}{}=({:.0f},{:.0f},{:.0f})", nm, b.refNode ? "" : "*", b.world.translate.x, b.world.translate.y,
-                        b.world.translate.z);
+                    chain += std::format(" {}{}=({:.0f},{:.0f},{:.0f})", nm, b.refNode ? "" : "*", b.world.translate.x, b.world.translate.y, b.world.translate.z);
                     break;
                 }
             }
@@ -1230,7 +1341,8 @@ namespace frik
         {
             auto idx = [&](const char* nm) {
                 for (int i = 0; i < tree->numTransforms; ++i) {
-                    if (tree->transforms[i].name.c_str() && _stricmp(tree->transforms[i].name.c_str(), nm) == 0) return i;
+                    if (tree->transforms[i].name.c_str() && _stricmp(tree->transforms[i].name.c_str(), nm) == 0)
+                        return i;
                 }
                 return -1;
             };
@@ -1238,13 +1350,23 @@ namespace frik
             if (a >= 0 && b >= 0 && c >= 0) {
                 const auto u = MatrixUtils::vec3Norm(tree->transforms[b].world.translate - tree->transforms[a].world.translate);
                 const auto v = MatrixUtils::vec3Norm(tree->transforms[c].world.translate - tree->transforms[b].world.translate);
-                logger::info("FRIK-flat legs (after FRIK): knee L {:.0f} deg; {} pelvis helpers follow the thighs", std::acos(std::clamp(MatrixUtils::vec3Dot(u, v), -1.0f, 1.0f)) * 57.29578f, _flatLegHelpers);
+                logger::info("FRIK-flat legs (after FRIK): knee L {:.0f} deg; {} pelvis helpers follow the thighs",
+                    std::acos(std::clamp(MatrixUtils::vec3Dot(u, v), -1.0f, 1.0f)) * 57.29578f,
+                    _flatLegHelpers);
             }
         }
-        logger::info("FRIK-flat tree: {} entries, {} with node, max tree-vs-node {:.1f} u ({}) | between frames (engine): max {:.1f} u ({}), "
-                     "{} bones > 2 u, root moved {:.1f} u |{}",
-            tree->numTransforms, withNode, nodeMax, nodeIdx >= 0 ? tree->transforms[nodeIdx].name.c_str() : "-", _flatBetweenMax, _flatBetweenName,
-            _flatBetweenCount, _flatBetweenRoot, chain);
+        logger::info(
+            "FRIK-flat tree: {} entries, {} with node, max tree-vs-node {:.1f} u ({}) | between frames (engine): max {:.1f} u ({}), "
+            "{} bones > 2 u, root moved {:.1f} u |{}",
+            tree->numTransforms,
+            withNode,
+            nodeMax,
+            nodeIdx >= 0 ? tree->transforms[nodeIdx].name.c_str() : "-",
+            _flatBetweenMax,
+            _flatBetweenName,
+            _flatBetweenCount,
+            _flatBetweenRoot,
+            chain);
     }
 #endif
 
