@@ -18,4 +18,3 @@ using namespace f4cf;
 #define DLLEXPORT __declspec(dllexport)
 
 #include "Version.h"
-

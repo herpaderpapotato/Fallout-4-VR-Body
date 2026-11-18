@@ -14,20 +14,20 @@
 #include <string>
 #include <string_view>
 
-#include <spdlog/spdlog.h>
 #include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/spdlog.h>
 
 // ---- C1: {fmt} -> std::format. CommonLibF4VR's spdlog bundles {fmt}; the flat CommonLib's spdlog is built with
 // std_format, so `fmt::` is std's.
 namespace fmt
 {
     using std::format;
+    using std::format_string;
     using std::format_to;
     using std::format_to_n;
     using std::formatted_size;
     using std::make_format_args;
     using std::vformat;
-    using std::format_string;
     template <class CharT>
     using basic_string_view = std::basic_string_view<CharT>;
     using string_view = std::string_view;
@@ -39,14 +39,22 @@ namespace fmt
 namespace f4cf::flat
 {
     inline constexpr bool IS_VR = false;
-    inline bool isVR() noexcept { return false; }
-    inline bool isF4() noexcept { return true; }
+
+    inline bool isVR() noexcept
+    {
+        return false;
+    }
+
+    inline bool isF4() noexcept
+    {
+        return true;
+    }
 }
 
 // ---- C3: F4SE::log (CommonLibF4VR) -> spdlog / F4SE::GetSaveFolderName (flat)
 namespace F4SE::log
 {
-    std::optional<std::filesystem::path> log_directory();  // Documents/My Games/Fallout4/F4SE (vrshim/src/FlatCompat.cpp)
+    std::optional<std::filesystem::path> log_directory(); // Documents/My Games/Fallout4/F4SE (vrshim/src/FlatCompat.cpp)
     using spdlog::critical;
     using spdlog::debug;
     using spdlog::error;
@@ -65,20 +73,20 @@ namespace vrshim
     enum class AddrStatus : std::uint8_t
     {
         kUnresolved,
-        kMapped,      // function / data, high-medium-anchor match or shared id
-        kMappedSite,  // call or patch site re-found inside the mapped flat function
-        kMappedLow,   // only a low-confidence function match
-        kManual,      // set by hand (analysis/frik-flat-port.md section 1)
+        kMapped, // function / data, high-medium-anchor match or shared id
+        kMappedSite, // call or patch site re-found inside the mapped flat function
+        kMappedLow, // only a low-confidence function match
+        kManual, // set by hand (analysis/frik-flat-port.md section 1)
     };
 
     struct AddrEntry
     {
-        std::uint64_t vr;        // Fallout4VR 1.2.72 RVA (or VR address-library id when isId)
-        std::uint64_t flat;      // Fallout 4 1.11.240 RVA, 0 = none
-        AddrStatus    status;
-        bool          isId;
-        const char*   name;
-        bool          isCode;  // VR address in .text: unresolved -> return-0 stub; data -> zero block
+        std::uint64_t vr; // Fallout4VR 1.2.72 RVA (or VR address-library id when isId)
+        std::uint64_t flat; // Fallout 4 1.11.240 RVA, 0 = none
+        AddrStatus status;
+        bool isId;
+        const char* name;
+        bool isCode; // VR address in .text: unresolved -> return-0 stub; data -> zero block
     };
 
     // Unresolved addresses never come back as 0 from flatAddress / FlatOffset / FlatId (that would be a null call or read):
@@ -102,21 +110,35 @@ namespace vrshim
         std::size_t resolved{ 0 };
         std::size_t low{ 0 };
     };
+
     AddrStats addressStats() noexcept;
-    void      logAddressReport();
+    void logAddressReport();
 
     // Drop-in for REL::Offset(0xVR) in the copied sources: .address() / .offset() / conversion give the FLAT
     // address, or 0 when there is none (REL::Offset would give module base + VR RVA, i.e. garbage on flat).
     class FlatOffset
     {
     public:
-        explicit FlatOffset(std::uint64_t a_vrRva, const std::source_location a_loc = std::source_location::current()) noexcept :
-            _address(flatAddress(a_vrRva, false, a_loc.file_name()))
+        explicit FlatOffset(std::uint64_t a_vrRva, const std::source_location a_loc = std::source_location::current()) noexcept
+            : _address(flatAddress(a_vrRva, false, a_loc.file_name()))
         {}
-        [[nodiscard]] std::uintptr_t address() const noexcept { return _address; }
-        [[nodiscard]] std::size_t    offset() const noexcept;
-        [[nodiscard]] bool           resolved() const noexcept { return inGameImage(_address); }
-        operator std::uintptr_t() const noexcept { return _address; }
+
+        [[nodiscard]] std::uintptr_t address() const noexcept
+        {
+            return _address;
+        }
+
+        [[nodiscard]] std::size_t offset() const noexcept;
+
+        [[nodiscard]] bool resolved() const noexcept
+        {
+            return inGameImage(_address);
+        }
+
+        operator std::uintptr_t() const noexcept
+        {
+            return _address;
+        }
 
     private:
         std::uintptr_t _address;
@@ -127,12 +149,24 @@ namespace vrshim
     class FlatId
     {
     public:
-        explicit FlatId(std::uint64_t a_vrId, const std::source_location a_loc = std::source_location::current()) noexcept :
-            _address(flatAddress(a_vrId, true, a_loc.file_name()))
+        explicit FlatId(std::uint64_t a_vrId, const std::source_location a_loc = std::source_location::current()) noexcept
+            : _address(flatAddress(a_vrId, true, a_loc.file_name()))
         {}
-        [[nodiscard]] std::uintptr_t address() const noexcept { return _address; }
-        [[nodiscard]] bool           resolved() const noexcept { return inGameImage(_address); }
-        operator std::uintptr_t() const noexcept { return _address; }
+
+        [[nodiscard]] std::uintptr_t address() const noexcept
+        {
+            return _address;
+        }
+
+        [[nodiscard]] bool resolved() const noexcept
+        {
+            return inGameImage(_address);
+        }
+
+        operator std::uintptr_t() const noexcept
+        {
+            return _address;
+        }
 
     private:
         std::uintptr_t _address;
@@ -143,7 +177,7 @@ namespace vrshim
 // ---- C5: CommonLibF4VR names that live elsewhere in the flat CommonLibF4
 namespace RE
 {
-    namespace Scaleform = ::Scaleform;  // CommonLibF4VR nests Scaleform in RE
+    namespace Scaleform = ::Scaleform; // CommonLibF4VR nests Scaleform in RE
 }
 
 namespace REL
@@ -157,8 +191,9 @@ namespace REL
             static Module m;
             return m;
         }
+
         [[nodiscard]] std::uintptr_t base() const noexcept;
-        [[nodiscard]] REL::Version   version() const noexcept;
+        [[nodiscard]] REL::Version version() const noexcept;
     };
 }
 
@@ -173,46 +208,46 @@ namespace RE
 
     struct VRPlayerNodes
     {
-        NiNode*     playerWorldNode;
-        NiNode*     roomNode;
-        NiNode*     primaryWandNode;
-        NiNode*     primaryWandTouchpad;
-        NiNode*     primaryUIAttachNode;
-        NiNode*     primaryWeaponToWandNode;
-        NiNode*     primaryWeaponKickbackRecoilNode;
-        NiNode*     primaryWeaponOffsetNode;
-        NiCamera*   primaryWeaponScopeCamera;
-        NiNode*     primaryVertibirdMinigunOffsetNode;
-        NiNode*     primaryMeleeWeaponOffsetNode;
-        NiNode*     primaryUnarmedPowerArmorWeaponOffsetNode;
+        NiNode* playerWorldNode;
+        NiNode* roomNode;
+        NiNode* primaryWandNode;
+        NiNode* primaryWandTouchpad;
+        NiNode* primaryUIAttachNode;
+        NiNode* primaryWeaponToWandNode;
+        NiNode* primaryWeaponKickbackRecoilNode;
+        NiNode* primaryWeaponOffsetNode;
+        NiCamera* primaryWeaponScopeCamera;
+        NiNode* primaryVertibirdMinigunOffsetNode;
+        NiNode* primaryMeleeWeaponOffsetNode;
+        NiNode* primaryUnarmedPowerArmorWeaponOffsetNode;
         BSTriShape* primaryWandLaserPointer;
-        NiNode*     primaryWandLaserPointerAdjuster;
-        NiNode*     equippedWeaponNode;
-        NiNode*     primaryMeleeWeaponOffsetNodeInUse;
-        NiNode*     secondaryMeleeWeaponOffsetNodeInUse;
-        NiNode*     secondaryWandNode;
-        NiNode*     point002Node;
-        NiNode*     workshopPalletNode;
-        NiNode*     workshopPalletSlider;
-        NiNode*     secondaryUIOffsetNode;
-        NiNode*     secondaryMeleeWeaponOffsetNode;
-        NiNode*     secondaryUnarmedPowerArmorWeaponOffsetNode;
-        NiNode*     secondaryAimNode;
-        NiNode*     pipboyParentNode;
-        NiNode*     pipboyRootNIFOnlyNode;
-        NiNode*     screenNode;
-        NiNode*     pipboyLightParentNode;
-        NiNode*     unk7C8;
-        NiNode*     scopeParentNode;
-        NiNode*     compassDialsNode;
-        NiNode*     hmdNode;
-        NiNode*     offscreenHmdNode;
-        NiNode*     uprightHmdNode;
-        NiNode*     uprightHmdLagNode;
-        NiNode*     blackSphereNode;
-        NiNode*     headLightParentNode;
-        NiNode*     unk810;
-        NiNode*     weaponLeftNode;
+        NiNode* primaryWandLaserPointerAdjuster;
+        NiNode* equippedWeaponNode;
+        NiNode* primaryMeleeWeaponOffsetNodeInUse;
+        NiNode* secondaryMeleeWeaponOffsetNodeInUse;
+        NiNode* secondaryWandNode;
+        NiNode* point002Node;
+        NiNode* workshopPalletNode;
+        NiNode* workshopPalletSlider;
+        NiNode* secondaryUIOffsetNode;
+        NiNode* secondaryMeleeWeaponOffsetNode;
+        NiNode* secondaryUnarmedPowerArmorWeaponOffsetNode;
+        NiNode* secondaryAimNode;
+        NiNode* pipboyParentNode;
+        NiNode* pipboyRootNIFOnlyNode;
+        NiNode* screenNode;
+        NiNode* pipboyLightParentNode;
+        NiNode* unk7C8;
+        NiNode* scopeParentNode;
+        NiNode* compassDialsNode;
+        NiNode* hmdNode;
+        NiNode* offscreenHmdNode;
+        NiNode* uprightHmdNode;
+        NiNode* uprightHmdLagNode;
+        NiNode* blackSphereNode;
+        NiNode* headLightParentNode;
+        NiNode* unk810;
+        NiNode* weaponLeftNode;
     };
 }
 
@@ -220,7 +255,7 @@ namespace vrshim
 {
     // The flat stand-in for PlayerCharacter::vrNodes (never null; members null until VrNodes::create ran).
     RE::VRPlayerNodes* getVRPlayerNodes() noexcept;
-    bool               vrNodesCreated() noexcept;  // true once vrshim::bridge::frameUpdate posed them
+    bool vrNodesCreated() noexcept; // true once vrshim::bridge::frameUpdate posed them
 }
 
 namespace RE
@@ -260,13 +295,16 @@ namespace REL
     }
 }
 
-#include "vrshim/FlatTypes.h"  // C11: types the flat lib lacks
+#include "vrshim/FlatTypes.h" // C11: types the flat lib lacks
 
 // ---- C9: CommonLibF4VR singletons spelled differently in the flat lib
 namespace RE::BSGraphics
 {
     struct RendererDataCompat
     {
-        static RendererData* GetSingleton() { return GetRendererData(); }
+        static RendererData* GetSingleton()
+        {
+            return GetRendererData();
+        }
     };
 }

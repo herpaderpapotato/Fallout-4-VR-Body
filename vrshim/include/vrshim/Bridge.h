@@ -39,9 +39,9 @@ namespace vrshim::bridge
 
     // The snapshot fetched by the last frameUpdate (valid() false before the first XR frame).
     [[nodiscard]] const FO4FlatVR_Frame& frame() noexcept;
-    [[nodiscard]] bool                   valid() noexcept;
-    [[nodiscard]] bool                   leftHanded() noexcept;
-    [[nodiscard]] std::uint64_t          frameCount() noexcept;
+    [[nodiscard]] bool valid() noexcept;
+    [[nodiscard]] bool leftHanded() noexcept;
+    [[nodiscard]] std::uint64_t frameCount() noexcept;
 
     // 16 Nov: the frame being run is a pause-time frame (UI::menuMode != 0: no player update, no animation, no floating-gun
     // placement this frame; fo4flatvr calls the frame callback from Main::OnIdle C33E62 then, [FRIK] bPausedFrame). Set by frameUpdate.

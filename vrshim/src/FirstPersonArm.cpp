@@ -27,7 +27,10 @@ namespace vrshim
         using UpdateNode_t = void (*)(float, RE::NiAVObject*, void*, bool);
         using QCam_t = void* (*)();
 
-        std::uintptr_t Base() { return reinterpret_cast<std::uintptr_t>(::GetModuleHandleW(nullptr)); }
+        std::uintptr_t Base()
+        {
+            return reinterpret_cast<std::uintptr_t>(::GetModuleHandleW(nullptr));
+        }
 
         bool PrologueOk()
         {
@@ -46,18 +49,21 @@ namespace vrshim
 
         std::uint64_t g_gripFrames = 0, g_gripFromGun = 0;
         vrshim::xf::Xf g_inHand;
-        bool           g_inHandReal = false;
+        bool g_inHandReal = false;
 
         RE::BSFlattenedBoneTree* FindTree(RE::NiAVObject* a_obj, int a_depth)
         {
-            if (!a_obj) return nullptr;
+            if (!a_obj)
+                return nullptr;
             if (const auto* rtti = a_obj->GetRTTI(); rtti && rtti->GetName() && std::strcmp(rtti->GetName(), "BSFlattenedBoneTree") == 0) {
                 return static_cast<RE::BSFlattenedBoneTree*>(a_obj);
             }
-            if (a_depth <= 0) return nullptr;
+            if (a_depth <= 0)
+                return nullptr;
             if (auto* n = a_obj->IsNode()) {
                 for (auto& c : n->children) {
-                    if (auto* t = FindTree(c.get(), a_depth - 1)) return t;
+                    if (auto* t = FindTree(c.get(), a_depth - 1))
+                        return t;
                 }
             }
             return nullptr;
@@ -67,21 +73,28 @@ namespace vrshim
         // Only while a weapon is drawn and not in power armour (the gun's own gates; elsewhere it does not place WEAPON).
         bool GunWeaponWorld(const RE::PlayerCharacter* a_pc, vrshim::xf::Xf& a_out)
         {
-            if (!a_pc) return false;
+            if (!a_pc)
+                return false;
             const auto bits = *reinterpret_cast<const std::uint32_t*>(reinterpret_cast<const std::uint8_t*>(a_pc) + 0x134);
-            if (((bits >> 1) & 7) != 3) return false;
+            if (((bits >> 1) & 7) != 3)
+                return false;
             auto* tree = FindTree(a_pc->firstPerson3D.get(), 3);
-            if (!tree || !tree->bone) return false;
+            if (!tree || !tree->bone)
+                return false;
             static RE::BSFlattenedBoneTree* s_tree = nullptr;
-            static int                      s_idx = -1, s_count = -1;
+            static int s_idx = -1, s_count = -1;
             if (tree != s_tree || tree->boneCount != s_count) {
                 s_tree = tree, s_count = tree->boneCount, s_idx = -1;
                 for (int i = 0; i < tree->boneCount; ++i) {
                     const char* nm = tree->bone[i].name.c_str();
-                    if (nm && _stricmp(nm, "WEAPON") == 0) { s_idx = i; break; }
+                    if (nm && _stricmp(nm, "WEAPON") == 0) {
+                        s_idx = i;
+                        break;
+                    }
                 }
             }
-            if (s_idx < 0 || !tree->bone[s_idx].node) return false;
+            if (s_idx < 0 || !tree->bone[s_idx].node)
+                return false;
             a_out = vrshim::xf::FromNi(tree->bone[s_idx].node->world);
             a_out.t = a_out.t + vrshim::xf::V{ a_pc->data.location.x, a_pc->data.location.y, a_pc->data.location.z };
             return true;
@@ -104,77 +117,85 @@ namespace vrshim
         auto* weapon = a_weapon ? *a_weapon : nullptr;
         auto* r = place(a_pc, weapon, a_offset ? *a_offset : nullptr);
         if (weapon) {
-            weapon->DecRefCount();  // VR EF6280 releases the reference its caller took (Skeleton::updateHandTarget IncRefs)
+            weapon->DecRefCount(); // VR EF6280 releases the reference its caller took (Skeleton::updateHandTarget IncRefs)
         }
         return r;
     }
 
     namespace
     {
-    void* place(const RE::PlayerCharacter* a_pc, RE::NiNode* weapon, RE::NiNode* offset)
-    {
-        // C19: stand-in hand (no drawn weapon on flat): the hand itself goes where WEAPON lands on the offset node
-        if (isStandInWeapon(weapon) && offset && weapon->parent) {
-            using namespace vrshim::xf;
-            auto* hand = weapon->parent;
-            Xf    target = FromNi(offset->world);
-            // C27 (user headset 15 Nov: revolver rotated off the grip): the drawn weapon is placed by fo4flatvr's floating gun
-            // (per-weapon JSON + its own calibration), so the primary hand takes the gun's actual WEAPON as its target and
-            // keeps FRIK's hand-to-weapon local: hand = WEAPON(gun) . weaponLocal^-1. Needs the gun's write of this frame:
-            // fo4flatvr runs FRIK's frame after its gun (FrikBridge.cpp HkNotify). Falls back to FRIK's offset node.
-            // 16 Nov: not in a pause-time frame - the floating gun is not placed while the game is paused (its W1 hook is in the
-            // player update), so its WEAPON is frozen; the hand follows the controller instead (user: hands frozen at a terminal)
-            if (weapon == fpHands().weapon && g_inHandReal && !vrshim::bridge::pausedFrame()) {
-                ++g_gripFrames;
-                Xf gun;
-                if (GunWeaponWorld(a_pc, gun) && std::sqrt((gun.t - target.t).x * (gun.t - target.t).x + (gun.t - target.t).y * (gun.t - target.t).y + (gun.t - target.t).z * (gun.t - target.t).z) < 40.0) {
-                    gun.s = FromNi(offset->world).s;
-                    // C29: hand = WEAPON(gun) . (FRIK's weapon-in-hand local)^-1 (C27 used the arm-placement glue here, which put the
-                    // hand off the grip by the per-weapon offset - user 15 Nov 15:33)
-                    const Xf handWorld = Mul(gun, Inv(g_inHand));
-                    hand->local = ToNi(handWorld);
-                    hand->world = hand->local;
-                    weapon->world = ToNi(Mul(handWorld, FromNi(weapon->local)));
-                    ++g_gripFromGun;
-                    return nullptr;
+        void* place(const RE::PlayerCharacter* a_pc, RE::NiNode* weapon, RE::NiNode* offset)
+        {
+            // C19: stand-in hand (no drawn weapon on flat): the hand itself goes where WEAPON lands on the offset node
+            if (isStandInWeapon(weapon) && offset && weapon->parent) {
+                using namespace vrshim::xf;
+                auto* hand = weapon->parent;
+                Xf target = FromNi(offset->world);
+                // C27 (user headset 15 Nov: revolver rotated off the grip): the drawn weapon is placed by fo4flatvr's floating gun
+                // (per-weapon JSON + its own calibration), so the primary hand takes the gun's actual WEAPON as its target and
+                // keeps FRIK's hand-to-weapon local: hand = WEAPON(gun) . weaponLocal^-1. Needs the gun's write of this frame:
+                // fo4flatvr runs FRIK's frame after its gun (FrikBridge.cpp HkNotify). Falls back to FRIK's offset node.
+                // 16 Nov: not in a pause-time frame - the floating gun is not placed while the game is paused (its W1 hook is in the
+                // player update), so its WEAPON is frozen; the hand follows the controller instead (user: hands frozen at a terminal)
+                if (weapon == fpHands().weapon && g_inHandReal && !vrshim::bridge::pausedFrame()) {
+                    ++g_gripFrames;
+                    Xf gun;
+                    if (GunWeaponWorld(a_pc, gun) &&
+                        std::sqrt((gun.t - target.t).x * (gun.t - target.t).x + (gun.t - target.t).y * (gun.t - target.t).y + (gun.t - target.t).z * (gun.t - target.t).z) < 40.0) {
+                        gun.s = FromNi(offset->world).s;
+                        // C29: hand = WEAPON(gun) . (FRIK's weapon-in-hand local)^-1 (C27 used the arm-placement glue here, which put the
+                        // hand off the grip by the per-weapon offset - user 15 Nov 15:33)
+                        const Xf handWorld = Mul(gun, Inv(g_inHand));
+                        hand->local = ToNi(handWorld);
+                        hand->world = hand->local;
+                        weapon->world = ToNi(Mul(handWorld, FromNi(weapon->local)));
+                        ++g_gripFromGun;
+                        return nullptr;
+                    }
+                }
+                const Xf handWorld = Mul(target, Inv(FromNi(weapon->local)));
+                hand->local = ToNi(handWorld);
+                hand->world = hand->local;
+                weapon->world = ToNi(Mul(handWorld, FromNi(weapon->local)));
+                return nullptr;
+            }
+            auto* fp = a_pc ? a_pc->firstPerson3D.get() : nullptr;
+            if (!weapon || !offset || !fp || !PrologueOk()) {
+                return nullptr;
+            }
+            RE::NiNode* upper = nullptr;
+            for (auto* p = weapon->parent; p; p = p->parent) {
+                if (EndsWith(p->name.c_str(), "Arm_UpperArm")) {
+                    upper = p;
+                    break;
                 }
             }
-            const Xf handWorld = Mul(target, Inv(FromNi(weapon->local)));
-            hand->local = ToNi(handWorld);
-            hand->world = hand->local;
-            weapon->world = ToNi(Mul(handWorld, FromNi(weapon->local)));
-            return nullptr;
-        }
-        auto* fp = a_pc ? a_pc->firstPerson3D.get() : nullptr;
-        if (!weapon || !offset || !fp || !PrologueOk()) {
-            return nullptr;
-        }
-        RE::NiNode* upper = nullptr;
-        for (auto* p = weapon->parent; p; p = p->parent) {
-            if (EndsWith(p->name.c_str(), "Arm_UpperArm")) {
-                upper = p;
-                break;
+            if (!upper || !upper->parent) {
+                logger::sample(10000, "FRIK-flat: no *Arm_UpperArm above '{}': first-person arm not placed", weapon->name.c_str());
+                return nullptr;
             }
-        }
-        if (!upper || !upper->parent) {
-            logger::sample(10000, "FRIK-flat: no *Arm_UpperArm above '{}': first-person arm not placed", weapon->name.c_str());
+            // world delta D = target . WEAPON^-1, applied to the upper arm: upper.world' = D . upper.world
+            using namespace vrshim::xf;
+            const Xf D = Mul(FromNi(offset->world), Inv(FromNi(weapon->world)));
+            upper->local = ToNi(Mul(Inv(FromNi(upper->parent->world)), Mul(D, FromNi(upper->world))));
+            const float ft = *reinterpret_cast<const float*>(Base() + kFrameTime);
+            reinterpret_cast<UpdateNode_t>(Base() + kUpdateNode)(ft, fp, reinterpret_cast<QCam_t>(Base() + kQ1stPersonCamera)(), false);
             return nullptr;
         }
-        // world delta D = target . WEAPON^-1, applied to the upper arm: upper.world' = D . upper.world
-        using namespace vrshim::xf;
-        const Xf D = Mul(FromNi(offset->world), Inv(FromNi(weapon->world)));
-        upper->local = ToNi(Mul(Inv(FromNi(upper->parent->world)), Mul(D, FromNi(upper->world))));
-        const float ft = *reinterpret_cast<const float*>(Base() + kFrameTime);
-        reinterpret_cast<UpdateNode_t>(Base() + kUpdateNode)(ft, fp, reinterpret_cast<QCam_t>(Base() + kQ1stPersonCamera)(), false);
-        return nullptr;
     }
-}
 }
 
 namespace vrshim
 {
-    std::uint64_t gripFromGunFrames() noexcept { return g_gripFromGun; }
-    std::uint64_t gripFrames() noexcept { return g_gripFrames; }
+    std::uint64_t gripFromGunFrames() noexcept
+    {
+        return g_gripFromGun;
+    }
+
+    std::uint64_t gripFrames() noexcept
+    {
+        return g_gripFrames;
+    }
 }
 
 namespace vrshim
@@ -185,4 +206,3 @@ namespace vrshim
         g_inHandReal = a_realWeapon;
     }
 }
-
