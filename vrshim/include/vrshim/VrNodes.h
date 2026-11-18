@@ -7,16 +7,16 @@ namespace vrshim
     // One frame of poses, already converted to game space (Z up, game units) by the caller (fo4flatvr exports).
     struct VrFramePoses
     {
-        RE::NiTransform playerWorld; // PlayerWorldNode local = world (player location, body yaw)
-        RE::NiTransform roomLocal; // RoomNode in PlayerWorldNode (roomscale origin)
-        bool hmdValid{ false };
+        RE::NiTransform playerWorld;       // PlayerWorldNode local = world (player location, body yaw)
+        RE::NiTransform roomLocal;         // RoomNode in PlayerWorldNode (roomscale origin)
+        bool            hmdValid{ false };
         RE::NiTransform hmdInRoom;
-        RE::NiTransform hmdUprightInRoom; // HMD with yaw only
-        bool primaryValid{ false };
-        RE::NiTransform primaryInRoom; // primary (weapon) hand grip
-        bool secondaryValid{ false };
+        RE::NiTransform hmdUprightInRoom;  // HMD with yaw only
+        bool            primaryValid{ false };
+        RE::NiTransform primaryInRoom;     // primary (weapon) hand grip
+        bool            secondaryValid{ false };
         RE::NiTransform secondaryInRoom;
-        RE::NiNode* firstPersonWeaponLeft{ nullptr };
+        RE::NiNode*     firstPersonWeaponLeft{ nullptr };
     };
 
     bool vrNodesCreated() noexcept;
@@ -37,13 +37,12 @@ namespace vrshim
         RE::NiNode* lHand{ nullptr };
         RE::NiNode* weapon{ nullptr };
         RE::NiNode* weaponLeft{ nullptr };
-        bool standIn{ true };
+        bool        standIn{ true };
     };
-
-    void selectFpHands();
+    void           selectFpHands();
     const FpHands& fpHands() noexcept;
-    std::uint64_t fpHandsGeneration() noexcept;
-    bool isStandInWeapon(const RE::NiNode* a_node) noexcept;
+    std::uint64_t  fpHandsGeneration() noexcept;
+    bool           isStandInWeapon(const RE::NiNode* a_node) noexcept;
 }
 
 namespace vrshim
@@ -60,3 +59,4 @@ namespace vrshim
     // gun's WEAPON with exactly that offset: hand = WEAPON(gun) . local^-1.
     void setPrimaryWeaponInHand(const RE::NiTransform& a_local, bool a_realWeapon) noexcept;
 }
+

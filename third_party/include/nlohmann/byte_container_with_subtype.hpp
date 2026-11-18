@@ -18,10 +18,10 @@ NLOHMANN_JSON_NAMESPACE_BEGIN
 
 /// @brief an internal type for a backed binary type
 /// @sa https://json.nlohmann.me/api/byte_container_with_subtype/
-template <typename BinaryType>
+template<typename BinaryType>
 class byte_container_with_subtype : public BinaryType
 {
-public:
+  public:
     using container_type = BinaryType;
     using subtype_type = std::uint64_t;
 
@@ -42,21 +42,22 @@ public:
 
     /// @sa https://json.nlohmann.me/api/byte_container_with_subtype/byte_container_with_subtype/
     byte_container_with_subtype(const container_type& b, subtype_type subtype_) noexcept(noexcept(container_type(b)))
-        : container_type(b),
-          m_subtype(subtype_),
-          m_has_subtype(true)
+        : container_type(b)
+        , m_subtype(subtype_)
+        , m_has_subtype(true)
     {}
 
     /// @sa https://json.nlohmann.me/api/byte_container_with_subtype/byte_container_with_subtype/
     byte_container_with_subtype(container_type&& b, subtype_type subtype_) noexcept(noexcept(container_type(std::move(b))))
-        : container_type(std::move(b)),
-          m_subtype(subtype_),
-          m_has_subtype(true)
+        : container_type(std::move(b))
+        , m_subtype(subtype_)
+        , m_has_subtype(true)
     {}
 
     bool operator==(const byte_container_with_subtype& rhs) const
     {
-        return std::tie(static_cast<const BinaryType&>(*this), m_subtype, m_has_subtype) == std::tie(static_cast<const BinaryType&>(rhs), rhs.m_subtype, rhs.m_has_subtype);
+        return std::tie(static_cast<const BinaryType&>(*this), m_subtype, m_has_subtype) ==
+               std::tie(static_cast<const BinaryType&>(rhs), rhs.m_subtype, rhs.m_has_subtype);
     }
 
     bool operator!=(const byte_container_with_subtype& rhs) const
@@ -94,7 +95,7 @@ public:
         m_has_subtype = false;
     }
 
-private:
+  private:
     subtype_type m_subtype = 0;
     bool m_has_subtype = false;
 };
