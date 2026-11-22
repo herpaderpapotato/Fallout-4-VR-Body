@@ -5,6 +5,9 @@
 #include "Config.h"
 #include "FRIK.h"
 #include "common/CommonUtils.h"
+#ifdef FRIK_FLAT
+#include "vrshim/Bridge.h"
+#endif
 
 using namespace common;
 
@@ -80,6 +83,9 @@ namespace frik
     /// </summary>
     void CullGeometryHandler::cullPlayerGeometry(const bool hideAll)
     {
+#ifdef FRIK_FLAT // C39: first person (this runs only in FRIK's first-person frame): the whole head hidden, except in selfie mode
+        flatHeadless(!g_frik.isSelfieModeOn(), "selfie");
+#endif
         if (g_frik.isSelfieModeOn() && g_config.selfieIgnoreHideFlags) {
             restoreGeometry();
             restoreEquipment();
@@ -126,6 +132,48 @@ namespace frik
             restoreEquipment();
         }
     }
+
+#ifdef FRIK_FLAT
+    bool CullGeometryHandler::flatHeadlessOn()
+    {
+        static const bool on = [] {
+            const bool o = vrshim::bridge::iniInt("bHeadlessFirstPerson", 1) != 0;
+            logger::info("FRIK-flat C39: first person hides the whole head (FaceGen node + head gear; headless shadow, no head push-back): {} "
+                         "([FRIK] bHeadlessFirstPerson)", o ? "on" : "OFF (FRIK's fHeadBackPositionOffset / FRIK.toml hide flags)");
+            return o;
+        }();
+        return on;
+    }
+
+    void CullGeometryHandler::flatHeadless(const bool a_hide, const char* a_why)
+    {
+        if (!a_hide || !flatHeadlessOn()) {
+            if (!_flatHead.Empty()) {
+                const auto n = _flatHead.Restore();
+                logger::info("FRIK-flat C39: head shown again ({} nodes; {})", n, a_why);
+            }
+            _flatHeadScan = {};
+            return;
+        }
+        const auto pl = RE::PlayerCharacter::GetSingleton();
+        auto* root = pl ? static_cast<RE::TESObjectREFR*>(pl)->Get3D(false) : nullptr;
+        const auto now = std::chrono::steady_clock::now();
+        // re-scan 10x a second: equipment / head parts change, and fo4flatvr's POV hide may hand the head over at a camera change
+        if (now - _flatHeadScan >= std::chrono::milliseconds(100)) {
+            const bool first = _flatHead.Empty();
+            _flatHeadScan = now;
+            const bool face = _flatHead.Scan(pl, root);
+            if (!face && !_flatHeadNoFaceLogged) {
+                _flatHeadNoFaceLogged = true;
+                logger::info("FRIK-flat C39: the player has no {} node: head not hidden (whole head or nothing)", fo4flatvr::headhide::kFaceNode);
+            }
+            if (face && first && !_flatHead.Empty()) {
+                logger::info("FRIK-flat C39: first person: head hidden ({} nodes: FaceGen head + head gear)", _flatHead.Size());
+            }
+        }
+        _flatHead.Keep();
+    }
+#endif
 
     /// <summary>
     /// Show all player geometries and equipment slots.

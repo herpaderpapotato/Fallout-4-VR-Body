@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -271,10 +272,63 @@ namespace frik
             return;
         }
         const float h = _playerNodes->uprightHmdNode->local.translate.z + getAdjustedPlayerHMDOffset();
+        // 20 Nov (user: "Ensure the auto scale only occurs on calibrate"): with fo4flatvr's recentre counter (bridge v5) the body
+        // height is measured only after a recentre - F8, the recentre gesture, the pipe, or fo4flatvr's automatic first-pose
+        // anchor / placeholder re-anchor - at the first standing frame 0.3 s after it (not sneaking, not in the air, not
+        // paused), and then stays fixed until the next recentre: no following the camera while playing. Session-wide, so a
+        // new skeleton (load, power armour exit) keeps it. The first skeleton of the session takes one sample the same way
+        // (the start-up anchor happened before it existed). [FRIK] bBodyHeightOnRecentre=0 = the 16/19 Nov behaviour below
+        // (continuous 4 s low-pass + re-seed on a camera step); also used with an older fo4flatvr.dll (bridge < v5).
+        static const bool s_onRecentre = [] {
+            const bool on = vrshim::bridge::iniInt("bBodyHeightOnRecentre", 1) != 0;
+            logger::info("FRIK-flat C36: body height measured only at a recentre (calibrate): {} ([FRIK] bBodyHeightOnRecentre)", on ? "on" : "OFF (follows the camera)");
+            return on;
+        }();
+        if (std::uint32_t seq = 0; s_onRecentre && vrshim::bridge::recentreCount(seq)) {
+            static float                                 s_calHeight = 0.0f;  // calibrated standing h, 0 = none yet
+            static std::uint32_t                         s_calSeq = 0;
+            static bool                                  s_calSeqKnown = false, s_calPending = false;
+            static std::chrono::steady_clock::time_point s_calNotBefore{};
+            const auto                                   now = std::chrono::steady_clock::now();
+            if (!s_calSeqKnown || seq != s_calSeq) {
+                if (s_calSeqKnown) {
+                    logger::info("FRIK-flat C36: recentre #{}: body height is measured at the next standing frame", seq);
+                }
+                s_calSeqKnown = true;
+                s_calSeq = seq;
+                s_calPending = true;
+                s_calNotBefore = now + std::chrono::milliseconds(300);  // the recentred head pose reaches the camera first
+            }
+            if (s_calPending && now >= s_calNotBefore && !isPlayerSneaking() && !isJumpingOrInAir() && !vrshim::bridge::pausedFrame() &&
+                std::isfinite(h) && h >= 50.0f && h <= 260.0f) {
+                s_calPending = false;
+                s_calHeight = h;
+                logger::info("FRIK-flat C36: calibrated at recentre #{}: camera standing h {:.1f} u -> body height {:.1f} u (FRIK.toml PlayerHeight {:.1f}), "
+                             "skeleton scale {:.3f}; fixed until the next recentre",
+                    seq, h, std::clamp(h, 0.7f * g_config.playerHeight, 1.45f * g_config.playerHeight), g_config.playerHeight,
+                    std::clamp(h, 0.7f * g_config.playerHeight, 1.45f * g_config.playerHeight) / DEFAULT_CAMERA_HEIGHT);
+            }
+            _flatHeight = s_calHeight;  // 0 until the first calibration: FRIK.toml's PlayerHeight
+            _flatHeightPrevH = -1.0f;
+            _flatHeightReseed = false;
+            return;
+        }
+        // 19 Nov (user: "the initial height is wrong ... recalibrating with a gesture brings you to the right size"): a recentre
+        // moves the camera height in one frame (user log 22:28:01: 204 -> 111 u), which the 4 s low-pass then took ~10 s to
+        // follow. A step of more than 25 u between two consecutive frames (no head moves 36 cm in one frame; the game's own eye
+        // height change is low-passed 0.6 s by fo4flatvr) re-seeds instead of ramping.
+        if (_flatHeightPrevH >= 0.0f && std::isfinite(h) && std::abs(h - _flatHeightPrevH) > 25.0f) {
+            _flatHeightReseed = true;  // taken by the next standing sample
+        }
+        _flatHeightPrevH = std::isfinite(h) ? h : -1.0f;
         if (isPlayerSneaking() || isJumpingOrInAir() || vrshim::bridge::pausedFrame() || !std::isfinite(h) || h < 50.0f || h > 260.0f) {
             return;
         }
-        if (_flatHeight <= 0.0f) {
+        if (_flatHeight <= 0.0f || _flatHeightReseed) {
+            if (_flatHeightReseed) {
+                logger::info("FRIK-flat C36: camera height stepped to {:.1f} u in one frame (recentre): body height re-seeded", h);
+            }
+            _flatHeightReseed = false;
             _flatHeight = h;  // first standing sample after skeleton init: no ramp from the default
         } else {
             const float dt = std::clamp(_frameTime, 0.0f, 0.25f);
@@ -357,6 +411,24 @@ namespace frik
 
             // Do another update before setting arms
             updateDownFromRoot(); // Do world update now so that IK calculations have proper world reference
+#ifdef FRIK_FLAT // C39 diag: where the solved feet landed vs their targets (every 5 s)
+            {
+                static auto s_t = std::chrono::steady_clock::now();
+                if (std::chrono::steady_clock::now() - s_t > std::chrono::seconds(5)) {
+                    s_t = std::chrono::steady_clock::now();
+                    const auto lf = findNode(_root, "LLeg_Foot");
+                    const auto rf = findNode(_root, "RLeg_Foot");
+                    const auto lc = findNode(_root, "LLeg_Calf");
+                    const auto lt = findNode(_root, "LLeg_Thigh");
+                    if (lf && rf && lc && lt) {
+                        logger::info("FRIK-flat C39 legs: foot - target L {:.1f} R {:.1f} u | L hip-knee {:.1f} knee-foot {:.1f} u | chain {} | walk state {} | root z {:.1f} footTgt z {:.1f}",
+                            MatrixUtils::vec3Len(lf->world.translate - _leftFootPos), MatrixUtils::vec3Len(rf->world.translate - _rightFootPos),
+                            MatrixUtils::vec3Len(lc->world.translate - lt->world.translate), MatrixUtils::vec3Len(lf->world.translate - lc->world.translate),
+                            lc->parent != lt || lf->parent != lc ? "offset bones" : "direct", _walkingState, _root->world.translate.z, _leftFootPos.z);
+                    }
+                }
+            }
+#endif
             api::core::invokeFramePhase(FramePhase::LegsSolved);
         }
 
@@ -433,7 +505,42 @@ namespace frik
         if (_inPowerArmor) {
             fixArmor();
         }
+#ifdef FRIK_FLAT // C38
+        flatBodyWrittenZ();
+#endif
     }
+
+#ifdef FRIK_FLAT // C38
+    /**
+     * Flat (user 19 Nov: "pip boy or pause menu and possible others, the player's head and body float up and away"): FRIK
+     * moves the 3D root (the skeleton root's parent) relative to its world z every frame: setBodyUnderHMD adds the
+     * PlayerWorldNode z, setBodyPosture subtracts PlayerBodyOffsetUp + the HMD offset. In a running frame the engine has
+     * rebuilt that world from the actor first. In a paused frame (C33E62, fo4flatvr [FRIK] bPausedFrame) it has not, so
+     * each paused frame stacked the net offset on the last one: user FRIK.log 22:28:14-22:28:23 (PauseMenu), bodyZ
+     * 7777 -> 10020 u, +240 u a second, camera and feet unchanged. Now the engine's value is kept (taken when the engine
+     * rewrote it, i.e. the world z differs from what FRIK left) and put back first in a frame where it was not rewritten
+     * (always in a paused frame), so every frame applies FRIK's offsets once to the engine's z. No switch: it only
+     * removes the stacking (without a paused frame the engine value is always fresh).
+     */
+    void Skeleton::flatBodyEngineZ(RE::NiNode* body)
+    {
+        float& z = body->world.translate.z;
+        const bool stale = _flatBodyZValid && (vrshim::bridge::pausedFrame() || z == _flatBodyWrittenZ);
+        if (stale) {
+            z = _flatBodyEngineZ;
+        } else {
+            _flatBodyEngineZ = z;
+            _flatBodyZValid = true;
+        }
+    }
+
+    void Skeleton::flatBodyWrittenZ()
+    {
+        if (_root && _root->parent) {
+            _flatBodyWrittenZ = _root->parent->world.translate.z;
+        }
+    }
+#endif
 
     void Skeleton::setTime()
     {
@@ -461,7 +568,14 @@ namespace frik
      */
     void Skeleton::setupHead(const float neckYaw, const float neckPitch) const
     {
-        const float headBackAdj = g_frik.isSelfieModeOn() && g_config.selfieIgnoreHideFlags ? 0 : g_config.headBackPositionOffset + (neckPitch > 0 ? 2 * neckPitch : 0);
+#ifdef FRIK_FLAT // C39: the head is hidden as a whole in first person (CullGeometryHandler::flatHeadless): no push-back, so the
+        // body and its shadow keep their natural head position (selfie shows the head; FRIK's own selfie rule below applies)
+        const bool flatHeadless = CullGeometryHandler::flatHeadlessOn() && !g_frik.isSelfieModeOn();
+#else
+        constexpr bool flatHeadless = false;
+#endif
+        const float headBackAdj = (g_frik.isSelfieModeOn() && g_config.selfieIgnoreHideFlags) || flatHeadless
+            ? 0 : g_config.headBackPositionOffset + (neckPitch > 0 ? 2 * neckPitch : 0);
         _head->local.translate -= RE::NiPoint3(headBackAdj, 2 * headBackAdj, 0);
         _head->local.rotate = _head->local.rotate * MatrixUtils::getMatrixFromEulerAngles(neckYaw, 0, neckPitch);
         RE::NiUpdateData* ud = nullptr;
@@ -575,6 +689,9 @@ namespace frik
         // between FRIK frames, and this pass sets it for the frame. Both write the same value, the camera's X/Y, to local and
         // world, so whichever ran last the node reads the same; the local used to be zeroed here, which the hook then undid.
         RE::NiNode* body = _root->parent;
+#ifdef FRIK_FLAT // C38
+        flatBodyEngineZ(body);
+#endif
         body->local.translate.x = _curentPosition.x;
         body->local.translate.y = _curentPosition.y;
         body->world.translate.x = _curentPosition.x;
@@ -899,6 +1016,20 @@ namespace frik
         const auto footNode = isLeft ? findNode(_root, "LLeg_Foot") : findNode(_root, "RLeg_Foot");
         const auto kneeNode = isLeft ? findNode(_root, "LLeg_Calf") : findNode(_root, "RLeg_Calf");
         const auto hipNode = isLeft ? findNode(_root, "LLeg_Thigh") : findNode(_root, "RLeg_Thigh");
+#ifdef FRIK_FLAT // C39: a skeleton mod's offset bones between thigh/calf/foot -> the chain-aware solve
+        if (hipNode && kneeNode && footNode && (kneeNode->parent != hipNode || footNode->parent != kneeNode)) {
+            static const bool s_chain = [] {
+                const bool on = vrshim::bridge::iniInt("bLegChainIK", 1) != 0;
+                logger::info("FRIK-flat C39: leg IK through skeleton-mod offset bones (thigh/calf/foot not direct parent-child): {} ([FRIK] bLegChainIK)",
+                    on ? "on" : "OFF (FRIK's direct-chain solve)");
+                return on;
+            }();
+            if (s_chain) {
+                setSingleLegChain(isLeft);
+                return;
+            }
+        }
+#endif
 
         const RE::NiPoint3 footPos = isLeft ? _leftFootPos : _rightFootPos;
         const RE::NiPoint3 hipPos = hipNode->world.translate;
@@ -968,6 +1099,147 @@ namespace frik
             footNode->local.translate = MatrixUtils::vec3Norm(footNode->local.translate) * calfLenOrig;
         }
     }
+
+#ifdef FRIK_FLAT // C39
+    /**
+     * Flat (user 19 Nov, TestProfileVR: "running/walking/moving send the playes legs flying around at different angles,
+     * potentialky different skeleton cause"): the user's female skeleton (Skeletal Adjustments for CBBE over Discrete Female
+     * Skeleton, female/skeleton.nif) puts offset bones into the leg chain: Pelvis > LLeg_Thigh_FULL_OFFSET > LLeg_Thigh >
+     * LLeg_Calf_FULL_OFFSET > LLeg_Calf > LLeg_Calf_OFFSET (t 0,2,0, 6.7 deg) > LLeg_Foot_OFFSET (t 0,-2,0, 2.5 deg) > LLeg_Foot.
+     * setSingleLeg assumes calf = child of thigh and foot = child of calf: it takes the bone lengths from the calf/foot local
+     * translations, aims and places them in the thigh/calf frames, so the foot landed in a frame turned ~9 deg and offset
+     * 2 u from the one it was solved in. Same solve here, with the rest vectors and the parent frames composed through the
+     * nodes in between (their locals are the skeleton's, untouched). Identical to setSingleLeg for a direct chain (not used
+     * then). Off: fo4flatvr.ini [FRIK] bLegChainIK=0.
+     */
+    void Skeleton::setSingleLegChain(const bool isLeft) const
+    {
+        RE::NiNode* footNode = isLeft ? findNode(_root, "LLeg_Foot") : findNode(_root, "RLeg_Foot");
+        RE::NiNode* kneeNode = isLeft ? findNode(_root, "LLeg_Calf") : findNode(_root, "RLeg_Calf");
+        RE::NiNode* hipNode = isLeft ? findNode(_root, "LLeg_Thigh") : findNode(_root, "RLeg_Thigh");
+        if (!footNode || !kneeNode || !hipNode || !hipNode->parent) {
+            return;
+        }
+        // nodes strictly between top and node, top-down; false if top is not an ancestor within 8 levels
+        constexpr int kMax = 8;
+        auto between = [](const RE::NiNode* top, const RE::NiAVObject* node, std::array<RE::NiNode*, kMax>& out, int& n) {
+            RE::NiNode* up[kMax];
+            int         c = 0;
+            RE::NiNode* p = node->parent;
+            for (; p && p != top; p = p->parent) {
+                if (c == kMax) {
+                    return false;
+                }
+                up[c++] = p;
+            }
+            if (!p) {
+                return false;
+            }
+            n = c;
+            for (int i = 0; i < c; ++i) {
+                out[i] = up[c - 1 - i];
+            }
+            return true;
+        };
+        std::array<RE::NiNode*, kMax> hk{}, kf{};
+        int                           nhk = 0, nkf = 0;
+        if (!between(hipNode, kneeNode, hk, nhk) || !between(kneeNode, footNode, kf, nkf)) {
+            return;
+        }
+        // rest vector of the child's origin in the top bone's local frame (FRIK convention: parent-local = lR^T . child-local)
+        auto restVec = [](const std::array<RE::NiNode*, kMax>& chain, const int n, const RE::NiAVObject* child) {
+            RE::NiPoint3 p = child->local.translate;
+            for (int i = n - 1; i >= 0; --i) {
+                const auto* x = chain[i];
+                p = x->local.translate + x->local.rotate.Transpose() * (p * x->local.scale);
+            }
+            return p;
+        };
+        const RE::NiPoint3 vHK = restVec(hk, nhk, kneeNode);
+        const RE::NiPoint3 vKF = restVec(kf, nkf, footNode);
+
+        const RE::NiPoint3 footPos = isLeft ? _leftFootPos : _rightFootPos;
+        const RE::NiPoint3 hipPos = hipNode->world.translate;
+        const float        hs = hipNode->world.scale;
+        const RE::NiPoint3 footToHip = hipPos - footPos;
+
+        auto rotV = RE::NiPoint3(0, 1, 0);
+        if (_inPowerArmor) {
+            rotV.y = 0;
+            rotV.z = isLeft ? 1.0f : -1.0f;
+        }
+        const RE::NiPoint3 hipDir = hipNode->world.rotate.Transpose() * (rotV);
+        const RE::NiPoint3 xDir = MatrixUtils::vec3Norm(footToHip);
+        const RE::NiPoint3 yDir = MatrixUtils::vec3Norm(hipDir - xDir * MatrixUtils::vec3Dot(hipDir, xDir));
+
+        const float thighLenOrig = MatrixUtils::vec3Len(vHK);
+        const float calfLenOrig = MatrixUtils::vec3Len(vKF);
+        if (thighLenOrig < 1.0f || calfLenOrig < 1.0f) {
+            return;
+        }
+        float thighLen = thighLenOrig;
+        float calfLen = calfLenOrig;
+        const float ftLen = (std::max)(MatrixUtils::vec3Len(footToHip), 0.1f);
+        if (ftLen > thighLen + calfLen) {
+            const float diff = ftLen - thighLen - calfLen;
+            const float ratio = calfLen / (calfLen + thighLen);
+            calfLen += ratio * diff + 0.1f;
+            thighLen += (1.0f - ratio) * diff + 0.1f;
+        }
+        float footAngle = acosf((calfLen * calfLen + ftLen * ftLen - thighLen * thighLen) / (2 * calfLen * ftLen));
+        if (std::isnan(footAngle) || std::isinf(footAngle)) {
+            calfLen = thighLen = (thighLenOrig + calfLenOrig) / 2.0f;
+            footAngle = acosf((calfLen * calfLen + ftLen * ftLen - thighLen * thighLen) / (2 * calfLen * ftLen));
+        }
+        BodyAdjustmentSubConfigMode::updateLegSlack((thighLenOrig + calfLenOrig) - ftLen);
+
+        const RE::NiPoint3 kneePos = footPos + xDir * (cosf(footAngle) * calfLen) + yDir * (sinf(footAngle) * calfLen);
+
+        // thigh: turn so the rest knee vector points at the knee target
+        RE::NiPoint3 uLocalDir = hipNode->world.rotate * (MatrixUtils::vec3Norm(kneePos - hipPos) / hs);
+        hipNode->local.rotate = MatrixUtils::getMatrixFromRotateVectorVec(uLocalDir, vHK) * hipNode->local.rotate;
+        const RE::NiMatrix3 hipWR = hipNode->local.rotate * hipNode->parent->world.rotate;
+
+        // knee's parent frame through the nodes in between
+        RE::NiMatrix3 kpWR = hipWR;
+        RE::NiPoint3  kpWP = hipPos;
+        float         kpWS = hs;
+        for (int i = 0; i < nhk; ++i) {
+            kpWP += kpWR.Transpose() * (hk[i]->local.translate * kpWS);
+            kpWR = hk[i]->local.rotate * kpWR;
+            kpWS *= hk[i]->local.scale;
+        }
+        const float ks = kpWS * kneeNode->local.scale;
+
+        // calf: turn so the rest foot vector points at the foot target
+        RE::NiMatrix3 calfWR = kneeNode->local.rotate * kpWR;
+        uLocalDir = calfWR * (MatrixUtils::vec3Norm(footPos - kneePos) / ks);
+        kneeNode->local.rotate = MatrixUtils::getMatrixFromRotateVectorVec(uLocalDir, vKF) * kneeNode->local.rotate;
+        calfWR = kneeNode->local.rotate * kpWR;
+
+        // knee at its target (thigh never longer than at rest), expressed in its real parent
+        RE::NiPoint3 kneeT = kneePos;
+        if (const float l = MatrixUtils::vec3Len(kneePos - hipPos); l > thighLenOrig * hs && l > 0.0f) {
+            kneeT = hipPos + (kneePos - hipPos) * (thighLenOrig * hs / l);
+        }
+        kneeNode->local.translate = kpWR * ((kneeT - kpWP) / kpWS);
+
+        // foot's parent frame from the placed knee
+        RE::NiMatrix3 fpWR = calfWR;
+        RE::NiPoint3  fpWP = kneeT;
+        float         fpWS = ks;
+        for (int i = 0; i < nkf; ++i) {
+            fpWP += fpWR.Transpose() * (kf[i]->local.translate * fpWS);
+            fpWR = kf[i]->local.rotate * fpWR;
+            fpWS *= kf[i]->local.scale;
+        }
+        RE::NiPoint3 footT = footPos;
+        if (const float l = MatrixUtils::vec3Len(footPos - kneeT); l > calfLenOrig * ks && l > 0.0f) {
+            footT = kneeT + (footPos - kneeT) * (calfLenOrig * ks / l);
+        }
+        footNode->local.translate = fpWR * ((footT - fpWP) / fpWS);
+    }
+#endif
 
     void Skeleton::rotateLeg(const uint32_t pos, const float angle) const
     {

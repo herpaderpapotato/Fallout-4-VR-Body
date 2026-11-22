@@ -154,10 +154,20 @@ namespace vrshim::bridge
         const auto mod = ::GetModuleHandleW(L"fo4flatvr.dll");
         const auto get = mod ? reinterpret_cast<FO4FLATVR_GetFrikBridge_t>(::GetProcAddress(mod, "FO4FLATVR_GetFrikBridge")) : nullptr;
         g_api = get ? get(FO4FLATVR_FRIK_BRIDGE_VERSION) : nullptr;
-        if (!g_api && get) {
-            g_api = get(3u);  // v4 (selfie) appends GetSelfie only: an older fo4flatvr.dll still serves v3
+        // v5 (recentre counter) and v4 (selfie) only append fields: an older fo4flatvr.dll still serves v4 / v3
+        for (std::uint32_t v = FO4FLATVR_FRIK_BRIDGE_VERSION; !g_api && get && v > 3u;) {
+            g_api = get(--v);
         }
         return g_api != nullptr;
+    }
+
+    bool recentreCount(std::uint32_t& a_out) noexcept
+    {
+        if (!g_api || g_api->version < 5u || !g_api->RecentreCount) {
+            return false;
+        }
+        a_out = g_api->RecentreCount();
+        return true;
     }
 
     bool selfie(FO4FlatVR_Selfie& a_out) noexcept

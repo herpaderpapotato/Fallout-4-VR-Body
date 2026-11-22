@@ -15,6 +15,10 @@ namespace vrshim::bridge
     // Bridge v4 (16 Nov): fo4flatvr's VRIK-style selfie request (both hands up; Gestures.h). False = none (older fo4flatvr).
     bool selfie(FO4FlatVR_Selfie& a_out) noexcept;
 
+    // Bridge v5 (20 Nov): fo4flatvr's recentre counter (F8 / gesture / pipe / automatic first-pose anchors). False = not
+    // available (older fo4flatvr). Any thread.
+    bool recentreCount(std::uint32_t& a_out) noexcept;
+
     // After the framework's load succeeded: logs the address report line and tells fo4flatvr FRIK-flat is active.
     void onLoaded();
 

@@ -205,6 +205,16 @@ namespace frik
         void updateFlatBodyHeight();
         float _flatHeight = 0.0f;        // low-passed standing camera height (FRIK units), 0 = not measured yet / off
         float _flatHeightLogged = 0.0f;
+        float _flatHeightPrevH = -1.0f;  // last frame's camera height (any state), < 0 = none: a one-frame step re-seeds (recentre)
+        bool  _flatHeightReseed = false;
+        // C38: the 3D root's world z as the engine left it (FRIK adds/subtracts offsets to it every frame; see setBodyUnderHMD)
+        float _flatBodyEngineZ = 0.0f;
+        float _flatBodyWrittenZ = 0.0f;
+        bool  _flatBodyZValid = false;
+        void  flatBodyEngineZ(RE::NiNode* body);
+        void  flatBodyWrittenZ();
+        // C39: FRIK's leg IK with skeleton-mod offset bones between thigh/calf/foot (setSingleLeg)
+        void setSingleLegChain(bool isLeft) const;
 #endif
         ArmNodes _rightArm;
         ArmNodes _leftArm;

@@ -976,6 +976,16 @@ namespace frik
             const auto& tb = tree->transforms[t];
             delta[side] = Mul(FromNi(tb.refNode ? tb.refNode->local : tb.local).R, T(FromNi(_flatEngineLocal[t]).R));  // FRIK . anim^-1 (pelvis frame)
         }
+        // C28 fix (19 Nov, user's skeleton: Pelvis > LLeg_Thigh_FULL_OFFSET > LLeg_Thigh): a pelvis child the thigh hangs
+        // under is not a helper. Turning it by the thigh's change after FRIK's leg solve turned the whole leg a second time
+        // (the solve already placed the thigh), and the next frame's solve started from that turned parent: legs swinging
+        // at random angles while moving. Ancestors of either thigh are skipped.
+        std::vector<char> thighAncestor(tree->numTransforms, 0);
+        for (const int t : thigh) {
+            for (int p = tree->transforms[t].parPos, guard = 0; p >= 0 && p < tree->numTransforms && guard < 64; p = tree->transforms[p].parPos, ++guard) {
+                thighAncestor[p] = 1;
+            }
+        }
         int n = 0;
         for (int i = 0; i < tree->numTransforms; ++i) {
             auto& b = tree->transforms[i];
@@ -986,6 +996,13 @@ namespace frik
             const char* pn = tree->transforms[b.parPos].name.c_str();
             if (!pn || _stricmp(pn, "Pelvis") != 0) {
                 continue;  // only node-less helpers hanging directly under the pelvis
+            }
+            if (thighAncestor[i]) {
+                if (static int s_logged = 0; s_logged < 2) {
+                    ++s_logged;
+                    logger::info("FRIK-flat C28: '{}' is a parent of a thigh (skeleton-mod offset bone): not turned with the thigh", nm);
+                }
+                continue;
             }
             const char c0 = static_cast<char>(std::toupper(static_cast<unsigned char>(nm[0])));
             const int  side = c0 == 'L' ? 0 : c0 == 'R' ? 1 : -1;

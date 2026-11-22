@@ -11,6 +11,9 @@
 #include "vrui/UIMultiStateToggleButtonPanel.h"
 #include "vrui/UITextPanel.h"
 #include "vrui/UIToggleButtonPanel.h"
+#ifdef FRIK_FLAT
+#include "vrshim/Bridge.h"
+#endif
 
 using namespace vrui;
 using namespace common;
@@ -75,7 +78,21 @@ namespace frik
         F4CF_PERF_FUNCTION();
 
         // open main config on the configured shortcut (both thumbsticks long-pressed by default)
+#ifdef FRIK_FLAT
+        // C41 (20 Nov, analysis/vr-config-ui.md): on flat the config UI is drawn by the framework's overlay renderer, which
+        // needs FO4VR's compositor and per-eye camera block and stays inert here, so the both-sticks shortcut opened an
+        // invisible config (closed Favorites; primary A then toggled selfie; no visible Exit). The shortcut is skipped unless
+        // fo4flatvr.ini [FRIK] bConfigShortcut=1 (for when a flat overlay renderer exists). No FRIK.toml edit needed. The
+        // Papyrus / API opens (openConfigMode) are unchanged.
+        static const bool s_shortcut = [] {
+            const bool on = vrshim::bridge::iniInt("bConfigShortcut", 0) != 0;
+            logger::info("FRIK-flat C41: config shortcut (both sticks) {} ([FRIK] bConfigShortcut)", on ? "on" : "off: its UI does not render on flat");
+            return on;
+        }();
+        if (!isOpen() && s_shortcut && vrcf::VRControllers.check(g_config.openMainConfigBinding)) {
+#else
         if (!isOpen() && vrcf::VRControllers.check(g_config.openMainConfigBinding)) {
+#endif
             logger::info("Open main config by shortcut...");
             if (g_frik.isFavoritesMenuOpen()) {
                 f4vr::closeFavoriteMenu();

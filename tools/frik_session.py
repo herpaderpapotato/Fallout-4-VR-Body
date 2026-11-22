@@ -84,7 +84,7 @@ def undeploy():
 
 
 STEAMVR_JSON = r"E:\SteamLibrary\steamapps\common\SteamVR\steamxr_win64.json"  # = plugin/tools/suite.py
-SAVE = "vrtest_sanctuary"
+SAVE = fo4test.latest_save()  # 19 Nov (user): most recent TestNora save in TestProfileVR
 SAVES = fo4test.saves_dir()  # MO2 profile-local saves (TestProfile: LocalSaves=true); fo4test copies the vrtest_* saves there
 
 

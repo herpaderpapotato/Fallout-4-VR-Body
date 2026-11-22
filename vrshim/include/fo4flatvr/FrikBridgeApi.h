@@ -23,7 +23,11 @@
 // v4 (16 Nov, gestures): GetSelfie - fo4flatvr's VRIK-style selfie (both hands up -> FRIK's mirror body in front of the
 // viewer, steered by the wrist roll; Gestures.h). Backwards compatible: fo4flatvr hands the same table to a v3 or v4 request
 // (fields are only appended), and FRIK.dll asks for v4 first, then v3, and calls GetSelfie only when version >= 4.
-#define FO4FLATVR_FRIK_BRIDGE_VERSION 4u
+// v5 (20 Nov, calibrate-only body height): RecentreCount - fo4flatvr's recentre counter (F8, the recentre gesture, the pipe,
+// the automatic first-pose anchor and its placeholder-pose re-anchor). FRIK-flat's auto body height (C36) samples the camera
+// height only after it changes. Backwards compatible as v4: the field is appended, fo4flatvr serves v3..v5 with one table,
+// FRIK.dll asks for v5, then v4, then v3, and reads RecentreCount only when version >= 5.
+#define FO4FLATVR_FRIK_BRIDGE_VERSION 5u
 #define FO4FLATVR_FRIK_BRIDGE_MIN_VERSION 3u
 
 #ifdef __cplusplus
@@ -118,6 +122,9 @@ typedef struct FO4FlatVR_FrikBridge
     uint8_t (*SetCameraOffsetCallback)(FO4FlatVR_CameraOffsetCallback a_cb, void* a_ctx);
     // v4: the current selfie request (any thread). 0 = none available (a_out untouched).
     uint8_t (*GetSelfie)(FO4FlatVR_Selfie* a_out);
+    // v5: number of recentres so far (any thread; head::RecenterCount: explicit F8 / gesture / pipe recentres and the
+    // automatic anchors on the first valid head pose / a start-up placeholder pose jump). A change = the user calibrated.
+    uint32_t (*RecentreCount)();
 } FO4FlatVR_FrikBridge;
 
 typedef const FO4FlatVR_FrikBridge* (*FO4FLATVR_GetFrikBridge_t)(uint32_t a_version);
