@@ -466,3 +466,5 @@ C346AC).
   while UI::menuMode != 0 (section 6 open item closed); C36 PlayerHeight follows the camera's standing height
   (`bAutoBodyHeight`); C37 per-bone engine-pose tracking: C28 input fixed, FRIK's writes on bones the engine does not animate
   restored when first person ends (`bRestoreEngineBody`); C20 gated to camera states 0/4. Details: work/handoff/frik-integration.md.
+- 2026-11-19 22:45-23:05: TestProfileVR round: HeadPose start-up pose-jump re-anchor (VirtualDesktopXR placeholder first pose), C36 re-seed on a recentre step, C38 paused-frame 3D-root z stacking, C28 skips thigh ancestors, C39 chain-aware leg IK for skeleton-mod offset bones (work/handoff/frik-integration.md "TestProfileVR round").
+- 2026-11-20 00:40: C41 FRIK's both-sticks config shortcut skipped on flat (its vrui panels draw through the framework overlay, which needs FO4VR's compositor + per-eye camera block and is inert here: the chord opened an invisible config); `fo4flatvr.ini [FRIK] bConfigShortcut=1` re-enables it. Stage E's "overlay rendering" applies to vrui panels too (analysis/vr-config-ui.md).
