@@ -468,3 +468,16 @@ C346AC).
   restored when first person ends (`bRestoreEngineBody`); C20 gated to camera states 0/4. Details: work/handoff/frik-integration.md.
 - 2026-11-19 22:45-23:05: TestProfileVR round: HeadPose start-up pose-jump re-anchor (VirtualDesktopXR placeholder first pose), C36 re-seed on a recentre step, C38 paused-frame 3D-root z stacking, C28 skips thigh ancestors, C39 chain-aware leg IK for skeleton-mod offset bones (work/handoff/frik-integration.md "TestProfileVR round").
 - 2026-11-20 00:40: C41 FRIK's both-sticks config shortcut skipped on flat (its vrui panels draw through the framework overlay, which needs FO4VR's compositor + per-eye camera block and is inert here: the chord opened an invisible config); `fo4flatvr.ini [FRIK] bConfigShortcut=1` re-enables it. Stage E's "overlay rendering" applies to vrui panels too (analysis/vr-config-ui.md).
+- 2026-11-21 00:30 (ROCK agent, ROCK-flat phase 1): C45 host exports for clients on top of FRIK.dll (`vrshim/FrikFlatExports.h`,
+  defined in `frik-src/api/FRIKApiV2.cpp`): `FRIKFLAT_GetVRPlayerNodes` (the flat VR node table, FO4VR's player+0x6E0),
+  `FRIKFLAT_VrNodesReady`, `FRIKFLAT_PausedFrame`, `FRIKFLAT_FrameCount`, `FRIKFLAT_GetHostExportsVersion`. Bridge header v8
+  (input claims, fo4flatvr side only; FRIK.dll asks v8 first). Built FRIK.dll 00:32:06, not deployed (hold).
+- 2026-11-27 20:45: upstream sync to FRIK 3d79219e (v0.80.3) + F4VR-CommonFramework 14a76b94. Three-way merge against the
+  copied bases (21b585c1 / 5677388); every FRIK_FLAT edit kept. Taken: FRIK API v2.5 (isWeaponRepositionModeOpen,
+  getWeaponOffset + Config::lookupWeaponOffsets), Mods Config override owners (framework config/Overrides, modsconfig client,
+  TomlEditor), framework devbench / vrui / imgui updates. C46: upstream moved the framework's game RE into CommonLibF4VR 0.6;
+  the port keeps its own layer (fw-src/f4vr, f4sevr, F4VROffsets, render hook sites, GameHooks.cpp, BoneSpheresHandler's F4SEVR
+  Papyrus binding) and `vrshim/ClibVrCompat.h` maps RE::NiNodeUtils / RE::VRSettings onto it (SetVisible stays the engine
+  SetAppCulled path), `RE::SkeletonBones` = f4vr::SkellyBones, RE::MuzzleFlash completed in FlatTypes.h. CommonLibF4VR member
+  calls the flat lib lacks (PlayerCharacter::GetBoneTree / SetRestrained / wand nodes / TogglePipBoyLight, BSFadeNode members)
+  stay on the f4vr calls. Pre-sync sources: work/deploy-backup/frik-flat-src-pre-sync-20261127.

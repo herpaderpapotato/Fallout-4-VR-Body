@@ -27,7 +27,26 @@
 // the automatic first-pose anchor and its placeholder-pose re-anchor). FRIK-flat's auto body height (C36) samples the camera
 // height only after it changes. Backwards compatible as v4: the field is appended, fo4flatvr serves v3..v5 with one table,
 // FRIK.dll asks for v5, then v4, then v3, and reads RecentreCount only when version >= 5.
-#define FO4FLATVR_FRIK_BRIDGE_VERSION 5u
+// v6 (20 Nov, VR settings panel + no-scaling switch): NoScaling - fo4flatvr.ini [General] bNoScaling (live): FRIK-flat uses
+// the game's default body scale (no FRIK.toml PlayerHeight, no C36 auto height, no arm-length bone scaling). SetFrikConfigApi -
+// FRIK.dll hands fo4flatvr a table (FO4FlatVR_FrikConfigApi) through which the VR settings panel previews, discards and saves
+// FRIK.toml values the way Mods Config FO4 VR does (FRIK's session overrides + FRIK's own saveConfigValues). Backwards
+// compatible as v4/v5: both fields are appended, fo4flatvr serves v3..v6 with one table, FRIK.dll asks v6, v5, v4, v3 and
+// uses them only when version >= 6.
+// v7 (20 Nov, live settings): ConfigRevision - fo4flatvr's settings revision (ConfigStore.h; increments whenever a merged
+// fo4flatvr.ini / MCM / VR-panel value changes). FRIK-flat re-reads its [FRIK] switches when it moves (vrshim iniIntLive), so
+// they apply without a restart. Appended as v4..v6; FRIK.dll asks v7 first and reads it only when version >= 7.
+// v8 (21 Nov, ROCK-flat phase 1): SetInputClaims - a physics-hands client (ROCK.dll, owner FO4FLATVR_CLAIM_OWNER_ROCK) claims
+// controller inputs per physical hand (FO4FLATVR_CLAIM_* bits). While claimed, and only in gameplay / quick loot (menus,
+// the wrist Pip-Boy, dialogue, VATS, workshop and lockpicking keep every input; menus keep the grip), fo4flatvr's bindings
+// treat the input as released: no pad output, no gesture (stick click), no tap/hold timer, and the glyph remap does not name
+// a claimed control for a gameplay action. The raw state in GetFrame / FRIK-flat's IVRSystem shim is never masked (the
+// claimer reads it there). Masks of all owners are ORed. fo4flatvr.ini [ROCK] bInputClaims=1 (live; 0 = claims are stored
+// but ignored, SetInputClaims returns 0). Appended as v4..v7; a client asks v8 and calls it only when version >= 8.
+// v9 (22 Nov, engine cull): RunOnMain - queue a_fn(a_ctx) on fo4flatvr's main-thread queue (tq::RunOnMain: OnIdle C34794,
+// after the frame's job threads). FRIK-flat routes its node hides / shows (NiAVObject::SetAppCulled, which also marks every
+// parent changed - shared scene-graph nodes) through it. Returns 1 = queued, 0 = not (the caller runs it itself).
+#define FO4FLATVR_FRIK_BRIDGE_VERSION 9u
 #define FO4FLATVR_FRIK_BRIDGE_MIN_VERSION 3u
 
 #ifdef __cplusplus
@@ -100,6 +119,27 @@ typedef struct FO4FlatVR_Selfie
     float    yawRad;     // extra turn about up from "facing the viewer", counter-clockwise seen from above (wrist roll)
 } FO4FlatVR_Selfie;
 
+// v6: FRIK.dll's config table for fo4flatvr's VR settings panel (FRIK.toml values by section + key, values as TOML text:
+// "true"/"false", "3", "8.6"). Every call may come from any thread; Preview / Discard / Save are queued and applied on FRIK's
+// next frame (game thread, also paused frames, and the smooth-movement camera step), so they never race FRIK's own reads.
+typedef struct FO4FlatVR_FrikConfigApi
+{
+    uint32_t size;  // sizeof(FO4FlatVR_FrikConfigApi) as FRIK.dll built it
+    uint32_t pad0;
+    // the value in effect (session override if any, else FRIK.toml) into a_out (NUL-terminated); 0 = the file has no such key
+    uint8_t (*Get)(const char* a_section, const char* a_key, char* a_out, uint32_t a_cap);
+    // live preview: a session override (never written), the members reload as for a file change (Mods Config's mechanism)
+    uint8_t (*Preview)(const char* a_section, const char* a_key, const char* a_value);
+    // drop this panel's preview of the key (back to FRIK.toml's value)
+    uint8_t (*Discard)(const char* a_section, const char* a_key);
+    // write the value to FRIK.toml through FRIK's own saveConfigValues (keeps the file's layout), then drop the preview
+    uint8_t (*Save)(const char* a_section, const char* a_key, const char* a_value);
+    // one status line (config file, queue, applied / saved / refused counts, last message) into a_out
+    void (*Status)(char* a_out, uint32_t a_cap);
+    // the config file FRIK.dll loaded (absolute path; Mods Config's clientState "configFile")
+    void (*ConfigFile)(char* a_out, uint32_t a_cap);
+} FO4FlatVR_FrikConfigApi;
+
 typedef struct FO4FlatVR_FrikBridge
 {
     uint32_t version;  // FO4FLATVR_FRIK_BRIDGE_VERSION
@@ -125,7 +165,30 @@ typedef struct FO4FlatVR_FrikBridge
     // v5: number of recentres so far (any thread; head::RecenterCount: explicit F8 / gesture / pipe recentres and the
     // automatic anchors on the first valid head pose / a start-up placeholder pose jump). A change = the user calibrated.
     uint32_t (*RecentreCount)();
+    // v6: fo4flatvr.ini [General] bNoScaling (any thread, live: re-read about once a second). 1 = the game's default scale.
+    uint8_t (*NoScaling)();
+    // v6: FRIK.dll registers (null = unregisters) its config table for the VR settings panel (pointer kept; static storage).
+    void (*SetFrikConfigApi)(const FO4FlatVR_FrikConfigApi* a_api);
+    // v7: settings revision (any thread, cheap): a change = re-read the ini keys (IniPath) that are meant to be live.
+    uint64_t (*ConfigRevision)();
+    // v8: input claims of one owner (any thread, cheap; call whenever the wanted set changes, or every frame). a_left /
+    // a_right = FO4FLATVR_CLAIM_* bits of the physical left / right controller; 0, 0 releases the owner's claims. Returns 1
+    // when fo4flatvr honours claims now ([ROCK] bInputClaims=1), 0 when they are stored but ignored (switch off, bad owner).
+    uint8_t (*SetInputClaims)(uint32_t a_owner, uint32_t a_left, uint32_t a_right);
+    // v9: run a_fn(a_ctx) on the main thread (queued; any thread may call). 1 = queued.
+    uint8_t (*RunOnMain)(void (*a_fn)(void*), void* a_ctx);
 } FO4FlatVR_FrikBridge;
+
+// v8 input claim bits (per physical hand)
+#define FO4FLATVR_CLAIM_GRIP 0x01u        // grip (squeeze)
+#define FO4FLATVR_CLAIM_TRIGGER 0x02u     // trigger
+#define FO4FLATVR_CLAIM_LOWER 0x04u       // lower face button (right A, left X)
+#define FO4FLATVR_CLAIM_UPPER 0x08u       // upper face button (right B, left Y)
+#define FO4FLATVR_CLAIM_STICKCLICK 0x10u  // thumbstick click
+#define FO4FLATVR_CLAIM_ALL 0x1Fu
+// owners (1..7)
+#define FO4FLATVR_CLAIM_OWNER_ROCK 1u
+#define FO4FLATVR_CLAIM_OWNER_MAX 7u
 
 typedef const FO4FlatVR_FrikBridge* (*FO4FLATVR_GetFrikBridge_t)(uint32_t a_version);
 

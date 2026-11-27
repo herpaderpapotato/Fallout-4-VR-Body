@@ -5,6 +5,7 @@
 struct FO4FlatVR_Frame;
 struct FO4FlatVR_FrikBridge;
 struct FO4FlatVR_Selfie;
+struct FO4FlatVR_FrikConfigApi;
 
 namespace vrshim::bridge
 {
@@ -51,8 +52,21 @@ namespace vrshim::bridge
     // placement this frame; fo4flatvr calls the frame callback from Main::OnIdle C33E62 then, [FRIK] bPausedFrame). Set by frameUpdate.
     [[nodiscard]] bool pausedFrame() noexcept;
 
+    // Bridge v6 (20 Nov): fo4flatvr.ini [General] bNoScaling (live; false with an older fo4flatvr): the game's default body
+    // scale, nothing of FRIK-flat / fo4flatvr scaling the body (Skeleton::playerHeightFlat, arm length). Any thread.
+    [[nodiscard]] bool noScaling() noexcept;
+    // Bridge v6: hand fo4flatvr FRIK's config table for its VR settings panel (FRIK pages). False = older fo4flatvr.
+    bool setConfigApi(const FO4FlatVR_FrikConfigApi* a_api) noexcept;
+
     // fo4flatvr.ini [FRIK] integer key (a_def when the key or the ini is missing). Any thread.
     [[nodiscard]] int iniInt(const char* a_key, int a_def) noexcept;
+    // 20 Nov (bridge v7, live settings): the same key, re-read only when fo4flatvr's settings revision changed (fo4flatvr.ini /
+    // MCM / VR-panel edit), so a switch applies while the game runs. a_key must be a string literal (cached by pointer).
+    // Logs the value on the first read and on every change. Any thread.
+    [[nodiscard]] int iniIntLive(const char* a_key, int a_def) noexcept;
+    [[nodiscard]] std::uint64_t configRevision() noexcept;  // 0 with an older fo4flatvr (< v7)
+    // v9: queue a_fn(a_ctx) on fo4flatvr's main-thread queue; false = not available (older fo4flatvr) or refused
+    bool runOnMain(void (*a_fn)(void*), void* a_ctx) noexcept;
 
     // C32 diag: the raw controller grip of the last frameUpdate in world (camera . grip-in-head, no wand calibration), side 0 left
     // 1 right; rotation in NiTransform storage (a_rot[i] = local axis i in world). False when that side had no valid grip.

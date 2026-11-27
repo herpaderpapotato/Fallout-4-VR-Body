@@ -12,6 +12,7 @@
 // copy, so the render always skins a FRIK pose (this frame's or, while FRIK's next frame writes the copy, the next one).
 // BSSkin::Instance layout (flat, from CalculateBoneMatrices): +0x28 NiTransform** worldTransforms data, +0x38 uint32 count.
 #include "vrshim/StableSkin.h"
+#include "vrshim/Bridge.h"  // C23b switch
 
 #include <unordered_map>
 #include <unordered_set>
@@ -23,6 +24,19 @@ namespace vrshim::skin
     {
         constexpr std::size_t kWtData = 0x28;
         constexpr std::size_t kWtCount = 0x38;
+        constexpr std::size_t kBones = 0x10;       // C23b: BSTArray<NiAVObject*> bones (data), count at +0x20
+        constexpr std::size_t kBonesCount = 0x20;
+
+        // the engine's own pointer for entry i: its bone's world (nullptr = unknown layout / no bone)
+        // [FRIK] bSkinRestoreLiveBones (fo4flatvr.ini, live): 0 = the 15 Nov remembered-pointer behaviour only
+        bool LiveBonesOn() { return vrshim::bridge::iniIntLive("bSkinRestoreLiveBones", 1) != 0; }
+
+        RE::NiTransform* LiveWorld(void* a_inst, std::uint32_t a_n, std::uint32_t a_i)
+        {
+            auto* const* bones = *reinterpret_cast<RE::NiAVObject* const* const*>(static_cast<std::uint8_t*>(a_inst) + kBones);
+            const std::uint32_t nb = *reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(a_inst) + kBonesCount);
+            return bones && nb == a_n && a_i < nb && bones[a_i] ? &bones[a_i]->world : nullptr;
+        }
 
         struct Shadow
         {
@@ -73,7 +87,14 @@ namespace vrshim::skin
             }
             if (rebuild) {
                 std::vector<RE::NiTransform*> orig(wt, wt + n);
+                const bool liveBones = LiveBonesOn();
                 for (std::uint32_t i = 0; i < n; ++i) {
+                    // C23b: the engine's pointer is its bone's world; take that, never a pointer into a copy (ours, or one
+                    // already freed when a shadow was dropped while the instance still pointed into it)
+                    if (auto* lw = liveBones ? LiveWorld(inst, n, i) : nullptr) {
+                        orig[i] = lw;
+                        continue;
+                    }
                     // an entry still pointing into our previous copy keeps its previous engine pointer (never our own memory)
                     if (!sh.copy.empty() && wt[i] >= sh.copy.data() && wt[i] < sh.copy.data() + sh.copy.size()) {
                         orig[i] = i < sh.orig.size() ? sh.orig[i] : nullptr;
@@ -112,6 +133,26 @@ namespace vrshim::skin
                 if (sh.orig[i] && wt[i] == &sh.copy[i]) wt[i] = sh.orig[i];
             }
         }
+        // C23b (22 Nov, VATS head agent): every entry that still points into one of our copies goes back to its live bone's
+        // world (BSSkin::Instance +0x10 bones; the engine's own entry is &bones[i]->world, NiAVObject +0x70: measured on all 20
+        // player skin instances during a VATS playback). The remembered-pointer pass above misses an entry whose shadow was
+        // dropped or rebuilt while it pointed into a copy; that entry would read freed memory once the copies are cleared below.
+        std::uint32_t missed = 0;
+        for (void* inst : LiveBonesOn() ? live : std::unordered_set<void*>{}) {
+            const std::uint32_t n = Count(inst);
+            RE::NiTransform**   wt = Data(inst);
+            if (!wt || n == 0 || n > 1024) continue;
+            for (std::uint32_t i = 0; i < n; ++i) {
+                auto* liveWorld = LiveWorld(inst, n, i);
+                if (liveWorld && wt[i] != liveWorld) {
+                    wt[i] = liveWorld;
+                    ++missed;
+                }
+            }
+        }
+        g_stats.lastRestoreMissed = missed;
+        g_stats.lastRestoreInstances = static_cast<std::uint32_t>(live.size());
+        g_stats.restoreMissedTotal += missed;
         g_shadows.clear();
         g_stats.instances = 0, g_stats.bones = 0;
     }

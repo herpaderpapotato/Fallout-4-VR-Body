@@ -10,7 +10,7 @@
 
 #include "HandPoseData.h"
 #include "common/CommonUtils.h"
-#include "f4vr/BSFlattenedBoneTree.h"
+#include "f4vr/BSFlattenedBoneTree.h" // FRIK-flat C46: the port keeps the framework's bone tree type
 
 namespace frik
 {
@@ -94,7 +94,7 @@ namespace frik
         };
 
         static HandPoseSource resolveHandPoseSource(bool isLeft);
-        static void applyPalmPose(f4cf::f4vr::BSFlattenedBoneTree* boneTree, bool isLeft, const HandPoseSource& source, PalmBlendState& blendState, float frameTime);
+        static void applyPalmPose(f4vr::BSFlattenedBoneTree* boneTree, bool isLeft, const HandPoseSource& source, PalmBlendState& blendState, float frameTime);
         void applyPrimaryWeaponHandPose(const std::string& boneName, const HandPoseSource& source);
         void applyDynamicHandPose(const std::string& boneName, float frameTime);
         void applyOverrideHandPose(const std::string& boneName, const HandFingersPose* activePose, const TaggedHandPoseOverride* activeOverride, float frameTime);

@@ -1,4 +1,5 @@
 #include "BoneSpheresHandler.h"
+#include "vrshim/EngineCull.h"  // FRIK-flat 22 Nov: engine cull
 
 #include <ranges>
 
@@ -208,7 +209,7 @@ namespace frik
     {
         if (_boneSphereRegisteredObjects.contains(handle)) {
             if (const auto sphere = _boneSphereRegisteredObjects[handle]->debugSphere) {
-                sphere->flags.flags |= 0x1;
+                vrshim::cull::Set(sphere, true);
                 sphere->local.scale = 0;
                 sphere->parent->DetachChild(sphere);
             }
@@ -400,15 +401,15 @@ namespace frik
                     sphere->name = RE::BSFixedString(DEBUG_SPHERE_NODE_NAME);
 
                     bone->AttachChild(sphere, true);
-                    sphere->flags.flags &= 0xfffffffffffffffe;
+                    vrshim::cull::Set(sphere, false);
                     sphere->local.scale = val->radius * 2;
                     val->debugSphere = sphere;
                 }
             } else if (sphere && !val->turnOnDebugSpheres) {
-                sphere->flags.flags |= 0x1;
+                vrshim::cull::Set(sphere, true);
                 sphere->local.scale = 0;
             } else if (sphere && val->turnOnDebugSpheres) {
-                sphere->flags.flags &= 0xfffffffffffffffe;
+                vrshim::cull::Set(sphere, false);
                 sphere->local.scale = val->radius * 2;
             }
 

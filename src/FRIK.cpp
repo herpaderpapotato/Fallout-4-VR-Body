@@ -24,9 +24,13 @@
 #include "vrui/UIManager.h"
 #include "vrshim/Bridge.h" // FRIK-flat C12
 #include "fo4flatvr/FrikBridgeApi.h" // FRIK-flat selfie test flag
+#include "FlatPanelConfig.h"                          // FRIK-flat: VR settings panel (bridge v6)
+#include "BodyGraph.h"                                // FRIK-flat C43: third-person body graph in first person
+#include "PovSwitchSync.h"                            // FRIK-flat C44: 1st / 3rd person switch with the body shown
 #include "vrshim/VrNodes.h" // FRIK-flat C17
 #include "vrshim/XfMath.h" // FRIK-flat C22
 #include "vrshim/StableSkin.h" // FRIK-flat C23
+#include "vrshim/EngineCull.h" // FRIK-flat 22 Nov engine cull
 
 using namespace common;
 
@@ -66,6 +70,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
             },
             nullptr);
         vrshim::bridge::onLoaded();
+        frik::flatpanel::registerWithBridge();  // bridge v6: the VR settings panel's FRIK pages
     }
     return ok;
 #else
@@ -96,6 +101,10 @@ namespace frik
 
         logger::info("Hook main...");
         hook::hookMain();
+#ifdef FRIK_FLAT // C43: the third-person body graph run in first person (BodyGraph.h; [FRIK] bBodyGraph)
+        bodygraph::install();
+        povswitch::install();  // C44 (PovSwitchSync.h; [FRIK] bPovSwitchSync)
+#endif
 
         // the framework registers the tool once the game has loaded, with everything set up here
         devbench::setupDevBenchTool();
@@ -178,18 +187,19 @@ namespace frik
         client.addState(
             "pipboyPlacement",
             [] {
-                return std::optional<Value>(static_cast<int>(f4vr::getPipboyPlacement()));
+                return std::optional<Value>(static_cast<int>(RE::VRSettings::GetPipboyPlacement()));
             },
             [this](const Value& value) {
                 const auto placement = std::get_if<int>(&value);
-                if (!placement || *placement < static_cast<int>(f4vr::PipboyPlacement::Wrist) || *placement > static_cast<int>(f4vr::PipboyPlacement::Projected)) {
+                if (!placement || *placement < static_cast<int>(RE::VRSettings::PipboyPlacement::kWrist) ||
+                    *placement > static_cast<int>(RE::VRSettings::PipboyPlacement::kProjected)) {
                     logger::warn("Mods Config FO4 VR gave an unknown Pip-Boy placement");
                     return;
                 }
-                if (static_cast<f4vr::PipboyPlacement>(*placement) != f4vr::getPipboyPlacement()) {
+                if (static_cast<RE::VRSettings::PipboyPlacement>(*placement) != RE::VRSettings::GetPipboyPlacement()) {
                     // close the wrist Pip-Boy first: once the game no longer puts it on the wrist, the close is ignored
                     closePipboy();
-                    f4vr::setPipboyPlacement(static_cast<f4vr::PipboyPlacement>(*placement));
+                    RE::VRSettings::SetPipboyPlacement(static_cast<RE::VRSettings::PipboyPlacement>(*placement));
                 }
             });
     }
@@ -304,6 +314,19 @@ namespace frik
     void FRIK::onFrameUpdate()
     {
         F4CF_PERF_FUNCTION();
+#ifdef FRIK_FLAT // 20 Nov: the VR settings panel's FRIK.toml previews / saves (FlatPanelConfig.h), applied on FRIK's own frame
+        flatpanel::drain();
+        // [General] bNoScaling toggled (live): rebuild the skeleton, so its torso / leg lengths (setBodyLen) take the new scale
+        {
+            static int s_noScale = -1;
+            const int  ns = vrshim::bridge::noScaling() ? 1 : 0;
+            if (s_noScale >= 0 && ns != s_noScale && _skelly) {
+                logger::info("FRIK-flat: [General] bNoScaling -> {}: rebuilding the skeleton at {}", ns, ns ? "the game's default scale" : "FRIK's scale");
+                releaseSkeleton();
+            }
+            s_noScale = ns;
+        }
+#endif
 
         // Scope providers publish before this frame, so clients hear the flip before any phase runs
         broadcastScopeEvents();
@@ -329,6 +352,10 @@ namespace frik
             // game not loaded or existing
             return;
         }
+#ifdef FRIK_FLAT // C43: body graph diag window + this frame's "graph 0 posed the legs" flag (C42 input)
+        bodygraph::frameTick();
+        povswitch::tick();  // C44: third-person graph left active in first person -> back to graph 1
+#endif
 #ifdef FRIK_FLAT // C23: the body only in first person (0) / iron sights (4); other camera states (third person, VATS, dialogue,
         // furniture: fo4flatvr's cinema screen) show the engine's own body
         {
@@ -347,10 +374,19 @@ namespace frik
                     vrshim::skin::restore(pl->loadedData && pl->loadedData->data3D ? pl->loadedData->data3D.get() : nullptr);
                     flatTrackRestore(cs);  // C37: what FRIK left on bones the engine does not re-animate goes back
                     _flatSkinActive = false;
-                    logger::info("FRIK-flat: camera state {} (not first person): body left to the engine", cs);
+                    const auto& ss = vrshim::skin::stats();
+                    const auto cst = vrshim::cull::GetStats();
+                    logger::info("FRIK-flat: camera state {} (not first person): body left to the engine (C23 skin restore: {} instances, "
+                                 "{} entries put back on their live bone that the remembered pointers missed; total {}) | engine cull {}: "
+                                 "sets {} main-thread drains {} applied {} changed-again {} direct {}",
+                        cs, ss.lastRestoreInstances, ss.lastRestoreMissed, ss.restoreMissedTotal, vrshim::cull::On() ? "on" : "off", cst.sets,
+                        cst.queued, cst.applied, cst.skippedChanged, cst.fallbackDirect);
                 }
+                // C45: after C35/C39's own restore: the player's head is never left culled outside first person
+                CullGeometryHandler::flatShowHeadOutsideFirstPerson(cs, _skelly ? _skelly->cullGeometry() : nullptr);
                 return;
             }
+            CullGeometryHandler::flatShowHeadOutsideFirstPerson(cs, nullptr);  // C45: first person only closes the episode log
             _flatSkinActive = true;
         }
 #endif
@@ -557,6 +593,7 @@ namespace frik
      */
     bool FRIK::smoothMovementFlat(float a_offset[3])
     {
+        flatpanel::drain();  // bBody=0 (smooth movement only) has no FRIK frame: the panel's smooth-movement edits apply here
         a_offset[0] = a_offset[1] = a_offset[2] = 0.0f;
         if (!_smoothMovementEnabled || g_config.disableSmoothMovement) {
             return false;
@@ -806,8 +843,8 @@ namespace frik
         const auto rightHand = firstPersonSkeleton ? vrshim::fpHands().rHand : nullptr;
         const auto leftHand = firstPersonSkeleton ? vrshim::fpHands().lHand : nullptr;
 #else
-        const auto rightHand = firstPersonSkeleton ? f4vr::findNode(firstPersonSkeleton, "RArm_Hand") : nullptr;
-        const auto leftHand = firstPersonSkeleton ? f4vr::findNode(firstPersonSkeleton, "LArm_Hand") : nullptr;
+        const auto rightHand = firstPersonSkeleton ? RE::NiNodeUtils::FindNode(firstPersonSkeleton, "RArm_Hand") : nullptr;
+        const auto leftHand = firstPersonSkeleton ? RE::NiNodeUtils::FindNode(firstPersonSkeleton, "LArm_Hand") : nullptr;
 #endif
         const auto weaponNode = f4vr::getWeaponNode();
         const auto camera = f4vr::getPlayerCamera();
@@ -1035,13 +1072,7 @@ namespace frik
         bool sameS(const RE::NiTransform& a, const RE::NiTransform& b) { return std::memcmp(&a.scale, &b.scale, sizeof(a.scale)) == 0; }
         bool restoreOn()
         {
-            static const bool s_on = [] {
-                const bool on = vrshim::bridge::iniInt("bRestoreEngineBody", 1) != 0;
-                logger::info("FRIK-flat C37: leaving first person restores what FRIK left on bones the engine does not animate: {} ([FRIK] bRestoreEngineBody)",
-                    on ? "on" : "OFF");
-                return on;
-            }();
-            return s_on;
+            return vrshim::bridge::iniIntLive("bRestoreEngineBody", 1) != 0;  // 20 Nov: live (bridge v7; logged there)
         }
     }
 
@@ -1431,8 +1462,8 @@ namespace frik
         }
         if (g_config.checkDebugDumpDataOnceFor("weapon_muzzle")) {
             if (const auto muzzle = getMuzzleFlashNodes()) {
-                f4vr::DebugDump::printNodes(muzzle->fireNode);
-                f4vr::DebugDump::printNodes(muzzle->projectileNode);
+                f4vr::DebugDump::printNodes(muzzle->flash3D.get());
+                f4vr::DebugDump::printNodes(muzzle->fireNode.get());
             }
         }
     }

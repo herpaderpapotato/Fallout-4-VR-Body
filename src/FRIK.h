@@ -201,7 +201,7 @@ namespace frik
         bool isWeaponInLeftHand() const
         {
             bool isLeft = false;
-            return g_externalAuthority.getWeaponNodeParentIsLeft(isLeft) ? isLeft : f4vr::isLeftHandedMode();
+            return g_externalAuthority.getWeaponNodeParentIsLeft(isLeft) ? isLeft : RE::VRSettings::IsLeftHandedMode();
         }
 
         // FRIK's own two-handed grip or one reported by an external mod (setOffHandGripping)
@@ -321,6 +321,10 @@ namespace frik
         void flatTrackFrameStart();
         void flatTrackFrameEnd();
         void flatTrackRestore(int a_camState);
+
+    public:
+        // C42: the engine's pose of this frame per third-person tree bone (C37 flatTrackFrameStart), for the animated legs
+        const std::vector<RE::NiTransform>& flatEngineLocal() const { return _flatEngineLocal; }
 #endif
 
     protected:

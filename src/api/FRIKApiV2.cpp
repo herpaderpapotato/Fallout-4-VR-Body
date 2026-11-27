@@ -2,8 +2,12 @@
 #include "FRIKApiV2.h"
 
 #include "ApiCore.h"
+#include "Config.h"
 #include "RecoilControllerRuntime.h"
 #include "ScopeAuthority.h"
+
+#include "vrshim/Bridge.h"
+#include "vrshim/FrikFlatExports.h"
 
 #include <cstddef>
 #include <intrin.h>
@@ -35,6 +39,15 @@ namespace
     static_assert(static_cast<int>(FRIKApiV2::Feature::WeaponPositioning) == static_cast<int>(core::Feature::WeaponPositioning));
     static_assert(static_cast<int>(FRIKApiV2::Feature::Pipboy) == static_cast<int>(core::Feature::Pipboy));
     static_assert(static_cast<int>(FRIKApiV2::Feature::SmoothMovement) == static_cast<int>(core::Feature::SmoothMovement));
+
+    static_assert(static_cast<int>(FRIKApiV2::WeaponOffsetMode::Weapon) == static_cast<int>(WeaponOffsetsMode::Weapon));
+    static_assert(static_cast<int>(FRIKApiV2::WeaponOffsetMode::PrimaryHand) == static_cast<int>(WeaponOffsetsMode::PrimaryHand));
+    static_assert(static_cast<int>(FRIKApiV2::WeaponOffsetMode::OffHand) == static_cast<int>(WeaponOffsetsMode::OffHand));
+    static_assert(static_cast<int>(FRIKApiV2::WeaponOffsetMode::Throwable) == static_cast<int>(WeaponOffsetsMode::Throwable));
+    static_assert(static_cast<int>(FRIKApiV2::WeaponOffsetMode::BackOfHandUI) == static_cast<int>(WeaponOffsetsMode::BackOfHandUI));
+    static_assert(static_cast<int>(FRIKApiV2::WeaponOffsetSource::None) == static_cast<int>(core::WeaponOffsetSource::None));
+    static_assert(static_cast<int>(FRIKApiV2::WeaponOffsetSource::BuiltIn) == static_cast<int>(core::WeaponOffsetSource::BuiltIn));
+    static_assert(static_cast<int>(FRIKApiV2::WeaponOffsetSource::Saved) == static_cast<int>(core::WeaponOffsetSource::Saved));
 
     static_assert(static_cast<int>(FRIKApiV2::ScopeCapability::KeepsBodyVisible) == static_cast<int>(ScopeCapability::KeepsBodyVisible));
     static_assert(static_cast<int>(FRIKApiV2::ScopeCapability::OwnsScopeCamera) == static_cast<int>(ScopeCapability::OwnsScopeCamera));
@@ -359,6 +372,11 @@ namespace
         return core::setWeaponNodeParentHand(*normalizedTag, core::isLeftForHand(hand));
     }
 
+    FRIKApiV2::WeaponOffsetSource FRIK_CALL getWeaponOffset(const char* weaponName, const FRIKApiV2::WeaponOffsetMode mode, const bool inPowerArmor, RE::NiTransform* outTransform)
+    {
+        return static_cast<FRIKApiV2::WeaponOffsetSource>(core::getWeaponOffset(weaponName, static_cast<std::uint8_t>(mode), inPowerArmor, outTransform));
+    }
+
     bool FRIK_CALL registerOpenModSettingButtonToMainConfig(const FRIKApiV2::OpenExternalModConfigData& data)
     {
         return core::registerOpenModSettingButtonToMainConfig(data.buttonIconNifPath, data.callbackReceiverName, data.callbackMessageType);
@@ -429,7 +447,9 @@ namespace
         .getHandSolveResult = &getHandSolveResult,
         .setOffHandGripping = &setOffHandGripping,
         .setWeaponNodeParentHand = &setWeaponNodeParentHand,
-        .clearWeaponNodeParentHand = &core::clearWeaponNodeParentHand };
+        .clearWeaponNodeParentHand = &core::clearWeaponNodeParentHand,
+        .isWeaponRepositionModeOpen = &core::isWeaponRepositionModeOpen,
+        .getWeaponOffset = &getWeaponOffset };
 }
 
 namespace frik::api
@@ -445,3 +465,12 @@ namespace frik::api
         return sizeof(FRIKApiV2);
     }
 }
+
+// FRIK-flat C45 (21 Nov, ROCK-flat phase 1): host exports for clients on top of FRIK.dll (vrshim/FrikFlatExports.h): the flat
+// VR player node table (FO4VR: PlayerCharacter+0x6E0) and the paused-frame flag. In the FRIK target (not the f4cf static
+// library), so the linker always keeps them.
+extern "C" __declspec(dllexport) std::uint32_t FRIKFLAT_GetHostExportsVersion() { return FRIKFLAT_HOST_EXPORTS_VERSION; }
+extern "C" __declspec(dllexport) void* FRIKFLAT_GetVRPlayerNodes() { return vrshim::getVRPlayerNodes(); }
+extern "C" __declspec(dllexport) std::uint8_t FRIKFLAT_VrNodesReady() { return vrshim::vrNodesCreated() ? 1 : 0; }
+extern "C" __declspec(dllexport) std::uint8_t FRIKFLAT_PausedFrame() { return vrshim::bridge::pausedFrame() ? 1 : 0; }
+extern "C" __declspec(dllexport) std::uint64_t FRIKFLAT_FrameCount() { return vrshim::bridge::frameCount(); }

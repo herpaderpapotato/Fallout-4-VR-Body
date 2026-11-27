@@ -68,7 +68,7 @@ namespace frik::api
      * number, so one header serves every FRIK from the minVersion you initialize with. Each entry
      * documents the version that introduced it; check getVersion() before calling a newer one.
      */
-    inline constexpr std::uint32_t FRIK_API_V2_VERSION = 4;
+    inline constexpr std::uint32_t FRIK_API_V2_VERSION = 5;
 
     struct FRIKApiV2
     {
@@ -508,6 +508,36 @@ namespace frik::api
         };
 
         /**
+         * Which stored weapon offset getWeaponOffset reads; each is kept per weapon. Since v2.5.
+         */
+        enum class WeaponOffsetMode : std::uint8_t
+        {
+            // The weapon node's local transform under the primary hand, scale included.
+            Weapon = 0,
+            // The rotation of the primary hand holding the stock.
+            PrimaryHand = 1,
+            // The offhand gripping the weapon.
+            OffHand = 2,
+            // The throwable in the primary hand.
+            Throwable = 3,
+            // The back-of-hand UI (HP, ammo) on the hand.
+            BackOfHandUI = 4,
+        };
+
+        /**
+         * Where the offset getWeaponOffset returned comes from. Since v2.5.
+         */
+        enum class WeaponOffsetSource : std::uint8_t
+        {
+            // FRIK has no offset for the weapon and mode.
+            None = 0,
+            // One of the default offsets FRIK ships with.
+            BuiltIn = 1,
+            // One the player saved in FRIK's weapon adjustment, or a file in FRIK_Config\Weapons_Offsets.
+            Saved = 2,
+        };
+
+        /**
          * Get the API v2 version number.
          * Use this to check compatibility before calling other functions.
          */
@@ -738,7 +768,8 @@ namespace frik::api
          * when its type changed is reached by its old name ("sOpenConfigButton" sets "kOpenConfigButton").
          * getConfigValue then returns it as it applies ("false", "2.0"). FRIK reloads its config
          * immediately so the change takes effect right away.
-         * @param caller name of the calling mod: the owner of the override, and used for FRIK logging.
+         * @param caller name of the calling mod: the owner of the override, used for FRIK logging and shown to
+         *        the player by Mods Config FO4 VR as who overrides the setting, so give the mod's readable name.
          *        When two owners override the same key, the one set last applies.
          * @return true if section, key, and value are all non-null and the value is of the key's type;
          *         false sets nothing.
@@ -884,11 +915,26 @@ namespace frik::api
         bool(FRIK_CALL* clearWeaponNodeParentHand)(const char* tag);
 
         /**
+         * Is FRIK's weapon adjustment (weapon reposition mode) open. It adjusts only a weapon FRIK places,
+         * so a mod that owns the weapon node yields it while this is true. Since v2.5.
+         */
+        bool(FRIK_CALL* isWeaponRepositionModeOpen)();
+
+        /**
+         * The offset FRIK uses for a weapon, found as FRIK finds its own: a saved offset over a built-in one,
+         * the power armor offset falling back to the plain one, and the left-handed weapon offset falling back
+         * to the right-handed one mirrored. weaponName is FRIK's weapon name (the display name, plus " Rifle"
+         * for a weapon FRIK splits into pistol and rifle by its stock). Writes outTransform only when found.
+         * Game thread. Since v2.5.
+         */
+        WeaponOffsetSource(FRIK_CALL* getWeaponOffset)(const char* weaponName, WeaponOffsetMode mode, bool inPowerArmor, RE::NiTransform* outTransform);
+
+        /**
          * Size of the table as published at a given contract version; the append-only rule keeps every older prefix intact.
          */
         static constexpr std::size_t tableSizeForVersion(const std::uint32_t version)
         {
-            constexpr std::size_t functionCountByVersion[] = { 0, 31, 37, 46, 46 };
+            constexpr std::size_t functionCountByVersion[] = { 0, 31, 37, 46, 46, 48 };
             const auto index = version < std::size(functionCountByVersion) ? version : std::size(functionCountByVersion) - 1;
             return functionCountByVersion[index] * sizeof(void (*)());
         }
@@ -953,6 +999,6 @@ namespace frik::api
 
     inline constexpr std::size_t FRIK_API_V2_FUNCTION_POINTER_SIZE = sizeof(decltype(FRIKApiV2::getVersion));
     static_assert(std::is_standard_layout_v<FRIKApiV2>, "FRIKApiV2 must remain standard-layout for its exported function table ABI");
-    static_assert(sizeof(FRIKApiV2) == 46 * FRIK_API_V2_FUNCTION_POINTER_SIZE, "FRIK API v2 function table layout changed");
+    static_assert(sizeof(FRIKApiV2) == 48 * FRIK_API_V2_FUNCTION_POINTER_SIZE, "FRIK API v2 function table layout changed");
     static_assert(FRIKApiV2::tableSizeForVersion(FRIK_API_V2_VERSION) == sizeof(FRIKApiV2), "tableSizeForVersion is out of step with the table");
 }

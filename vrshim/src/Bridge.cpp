@@ -19,6 +19,8 @@
 
 #include <atomic>
 #include <cmath>
+#include <mutex>
+#include <unordered_map>
 
 namespace vrshim::bridge
 {
@@ -87,7 +89,14 @@ namespace vrshim::bridge
 
         void LoadCalib(double a_upm)
         {
-            if (g_calib.loaded) return;
+            // 20 Nov (live settings, bridge v7): read again when fo4flatvr's settings changed (grip calibration, bLeftHandMirror)
+            // or the units per metre did (the offset is in units)
+            static std::uint64_t s_rev = 0;
+            static double        s_upm = 0.0;
+            const std::uint64_t  rev = g_api && g_api->version >= 7u && g_api->ConfigRevision ? g_api->ConfigRevision() : 0;
+            if (g_calib.loaded && rev == s_rev && a_upm == s_upm) return;
+            s_rev = rev;
+            s_upm = a_upm;
             constexpr double d2r = 3.14159265358979 / 180.0;
             // fo4flatvr's floating-gun calibration: [Weapon], else the retired [Hands] section, else the default
             auto cal = [](const char* k, float d) { return IniFloat("Weapon", k, IniFloat("Hands", k, d)); };
@@ -154,11 +163,26 @@ namespace vrshim::bridge
         const auto mod = ::GetModuleHandleW(L"fo4flatvr.dll");
         const auto get = mod ? reinterpret_cast<FO4FLATVR_GetFrikBridge_t>(::GetProcAddress(mod, "FO4FLATVR_GetFrikBridge")) : nullptr;
         g_api = get ? get(FO4FLATVR_FRIK_BRIDGE_VERSION) : nullptr;
-        // v5 (recentre counter) and v4 (selfie) only append fields: an older fo4flatvr.dll still serves v4 / v3
+        // v7 (settings revision), v6 (no-scaling + config table), v5 (recentre counter) and v4 (selfie) only append fields: an
+        // older fo4flatvr.dll still serves v6 / v5 / v4 / v3
         for (std::uint32_t v = FO4FLATVR_FRIK_BRIDGE_VERSION; !g_api && get && v > 3u;) {
             g_api = get(--v);
         }
         return g_api != nullptr;
+    }
+
+    bool noScaling() noexcept
+    {
+        return g_api && g_api->version >= 6u && g_api->NoScaling && g_api->NoScaling() != 0;
+    }
+
+    bool setConfigApi(const FO4FlatVR_FrikConfigApi* a_api) noexcept
+    {
+        if (!g_api || g_api->version < 6u || !g_api->SetFrikConfigApi) {
+            return false;
+        }
+        g_api->SetFrikConfigApi(a_api);
+        return true;
     }
 
     bool recentreCount(std::uint32_t& a_out) noexcept
@@ -218,6 +242,41 @@ namespace vrshim::bridge
     {
         const char* path = g_api && g_api->IniPath ? g_api->IniPath() : nullptr;
         return path ? static_cast<int>(::GetPrivateProfileIntA("FRIK", a_key, a_def, path)) : a_def;
+    }
+
+    std::uint64_t configRevision() noexcept
+    {
+        return g_api && g_api->version >= 7u && g_api->ConfigRevision ? g_api->ConfigRevision() : 0;
+    }
+
+    bool runOnMain(void (*a_fn)(void*), void* a_ctx) noexcept
+    {
+        return g_api && g_api->version >= 9u && g_api->RunOnMain && a_fn && g_api->RunOnMain(a_fn, a_ctx) != 0;
+    }
+
+    // 20 Nov (live settings, bridge v7): cached per call site key (string literals: one pointer per key), re-read only when
+    // fo4flatvr's settings revision moved. With an older fo4flatvr (revision 0 forever) it is read once, as before.
+    int iniIntLive(const char* a_key, int a_def) noexcept
+    {
+        struct Entry
+        {
+            std::uint64_t rev{ ~0ull };
+            int           value{ 0 };
+        };
+        static std::mutex                               s_lock;
+        static std::unordered_map<const char*, Entry>   s_cache;
+        const std::uint64_t rev = configRevision();
+        std::scoped_lock l(s_lock);
+        auto& e = s_cache[a_key];
+        if (e.rev == rev) return e.value;
+        const bool first = e.rev == ~0ull;
+        const int  v = iniInt(a_key, a_def);
+        if (first || v != e.value) {
+            logger::info("FRIK-flat: [FRIK] {}={}{}", a_key, v, first ? "" : " (changed while running: applied live)");
+        }
+        e.rev = rev;
+        e.value = v;
+        return v;
     }
 
     const FO4FlatVR_Frame&      frame() noexcept { return g_frame; }

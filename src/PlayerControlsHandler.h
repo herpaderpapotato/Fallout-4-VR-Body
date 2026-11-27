@@ -52,7 +52,7 @@ namespace frik
         if (_weaponHidden) {
             _weaponHidden = false;
             logger::info("reset weapon visibility for Pipboy operation with finger");
-            f4vr::setNodeVisibility(f4vr::get1StChildNode(f4vr::getWeaponNode()), true);
+            RE::NiNodeUtils::SetVisible(RE::NiNodeUtils::GetFirstChild(f4vr::getWeaponNode()), true);
         }
 
         if (_disabledInput) {
@@ -123,16 +123,16 @@ namespace frik
      */
     inline void PlayerControlsHandler::checkWeaponHideForPipboyOperationWIthFinger(const Pipboy* pipboy, const WeaponPositionAdjuster* weaponPosition)
     {
-        if (!f4vr::isLeftHandedMode() && pipboy->isOperatingWithFinger() && weaponPosition->isWeaponDrawn()) {
+        if (!RE::VRSettings::IsLeftHandedMode() && pipboy->isOperatingWithFinger() && weaponPosition->isWeaponDrawn()) {
             if (!_weaponHidden) {
                 _weaponHidden = true;
                 logger::debug("Hide weapon for Pipboy operation with finger");
-                f4vr::setNodeVisibility(f4vr::get1StChildNode(f4vr::getWeaponNode()), false);
+                RE::NiNodeUtils::SetVisible(RE::NiNodeUtils::GetFirstChild(f4vr::getWeaponNode()), false);
             }
         } else if (_weaponHidden) {
             _weaponHidden = false;
             logger::debug("Show weapon for Pipboy operation with finger");
-            f4vr::setNodeVisibility(f4vr::get1StChildNode(f4vr::getWeaponNode()), true);
+            RE::NiNodeUtils::SetVisible(RE::NiNodeUtils::GetFirstChild(f4vr::getWeaponNode()), true);
         }
     }
 

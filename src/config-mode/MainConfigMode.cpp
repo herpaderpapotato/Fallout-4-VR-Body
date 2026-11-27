@@ -84,11 +84,7 @@ namespace frik
         // invisible config (closed Favorites; primary A then toggled selfie; no visible Exit). The shortcut is skipped unless
         // fo4flatvr.ini [FRIK] bConfigShortcut=1 (for when a flat overlay renderer exists). No FRIK.toml edit needed. The
         // Papyrus / API opens (openConfigMode) are unchanged.
-        static const bool s_shortcut = [] {
-            const bool on = vrshim::bridge::iniInt("bConfigShortcut", 0) != 0;
-            logger::info("FRIK-flat C41: config shortcut (both sticks) {} ([FRIK] bConfigShortcut)", on ? "on" : "off: its UI does not render on flat");
-            return on;
-        }();
+        const bool s_shortcut = vrshim::bridge::iniIntLive("bConfigShortcut", 0) != 0;  // 20 Nov: live (bridge v7)
         if (!isOpen() && s_shortcut && vrcf::VRControllers.check(g_config.openMainConfigBinding)) {
 #else
         if (!isOpen() && vrcf::VRControllers.check(g_config.openMainConfigBinding)) {
@@ -105,7 +101,7 @@ namespace frik
             return;
         }
 
-        _configUI->setPosition(0, 0, f4vr::isNodeVisible(f4vr::getWeaponNode()) ? 6.0f : 0.0f);
+        _configUI->setPosition(0, 0, RE::NiNodeUtils::IsVisible(f4vr::getWeaponNode()) ? 6.0f : 0.0f);
 
         // toggle selfie if Pipboy is not open as it uses the same button
         if (!g_frik.isPipboyOn() && vrcf::VRControllers.check(g_config.toggleSelfieBinding)) {

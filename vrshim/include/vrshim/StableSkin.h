@@ -8,6 +8,10 @@ namespace vrshim::skin
     {
         std::uint32_t instances = 0, bones = 0;
         std::uint64_t rebuilds = 0;
+        // C23b (22 Nov): last restore - entries put back on their live bone that the remembered-pointer restore missed
+        // (they would have kept pointing at a freed copy: that piece skinned from garbage outside first person)
+        std::uint32_t lastRestoreMissed = 0, lastRestoreInstances = 0;
+        std::uint64_t restoreMissedTotal = 0;
     };
     // End of FRIK's frame (game thread): copy the bone worlds of every skin instance under a_root and point the instances at them.
     void refresh(RE::NiAVObject* a_root);

@@ -7,6 +7,7 @@
 #include "common/CommonUtils.h"
 #ifdef FRIK_FLAT
 #include "vrshim/Bridge.h"
+#include "vrshim/EngineCull.h"
 #endif
 
 using namespace common;
@@ -40,7 +41,7 @@ namespace frik
         // re-show only the geometries this handler hid; anything another mod hid stays hidden
         for (const auto idx : _hideFaceSkinGeometryIndexes) {
             if (std::cmp_less(idx, rn->geomArray.size()) && rn->geomArray[idx].geometry) {
-                f4vr::setNodeVisibility(rn->geomArray[idx].geometry.get(), true);
+                RE::NiNodeUtils::SetVisible(rn->geomArray[idx].geometry.get(), true);
             }
         }
         _hideFaceSkinGeometryIndexes.clear();
@@ -102,7 +103,7 @@ namespace frik
             _isAllCulled = true;
             _isGeometryCulled = true;
             for (auto& i : rn->geomArray) {
-                f4vr::setNodeVisibility(i.geometry.get(), false);
+                RE::NiNodeUtils::SetVisible(i.geometry.get(), false);
             }
             return;
         }
@@ -117,7 +118,7 @@ namespace frik
             _isGeometryCulled = true;
             preProcessHideGeometryIndexes(rn);
             for (const uint32_t idx : _hideFaceSkinGeometryIndexes) {
-                f4vr::setNodeVisibility(rn->geomArray[idx].geometry.get(), false);
+                RE::NiNodeUtils::SetVisible(rn->geomArray[idx].geometry.get(), false);
             }
         } else {
             restoreGeometry();
@@ -136,21 +137,20 @@ namespace frik
 #ifdef FRIK_FLAT
     bool CullGeometryHandler::flatHeadlessOn()
     {
-        static const bool on = [] {
-            const bool o = vrshim::bridge::iniInt("bHeadlessFirstPerson", 1) != 0;
-            logger::info("FRIK-flat C39: first person hides the whole head (FaceGen node + head gear; headless shadow, no head push-back): {} "
-                         "([FRIK] bHeadlessFirstPerson)", o ? "on" : "OFF (FRIK's fHeadBackPositionOffset / FRIK.toml hide flags)");
-            return o;
-        }();
-        return on;
+        // 22 Nov: HeadHideCore culls through vrshim::cull::Set (bit 0 at once + the engine's SetAppCulled on the main thread;
+        // [FRIK] bEngineCullFlag decides inside)
+        fo4flatvr::headhide::CullHook() = &vrshim::cull::Set;
+        // 20 Nov (live settings, bridge v7): off restores a hidden head at the next flatHeadless call
+        return vrshim::bridge::iniIntLive("bHeadlessFirstPerson", 1) != 0;
     }
 
     void CullGeometryHandler::flatHeadless(const bool a_hide, const char* a_why)
     {
         if (!a_hide || !flatHeadlessOn()) {
             if (!_flatHead.Empty()) {
+                const auto names = _flatHead.Names();
                 const auto n = _flatHead.Restore();
-                logger::info("FRIK-flat C39: head shown again ({} nodes; {})", n, a_why);
+                logger::info("FRIK-flat C39: head shown again ({} nodes: {}; {})", n, names, a_why);
             }
             _flatHeadScan = {};
             return;
@@ -168,12 +168,66 @@ namespace frik
                 logger::info("FRIK-flat C39: the player has no {} node: head not hidden (whole head or nothing)", fo4flatvr::headhide::kFaceNode);
             }
             if (face && first && !_flatHead.Empty()) {
-                logger::info("FRIK-flat C39: first person: head hidden ({} nodes: FaceGen head + head gear)", _flatHead.Size());
+                logger::info("FRIK-flat C39: first person: head hidden ({} nodes: {})", _flatHead.Size(), _flatHead.Names());
+            } else if (face && _flatHead.Size() != _flatHeadLogged && !first) {
+                logger::info("FRIK-flat C39: first person: head set now {} nodes: {}", _flatHead.Size(), _flatHead.Names());
             }
+            _flatHeadLogged = _flatHead.Size();
         }
         _flatHead.Keep();
     }
 #endif
+
+    // C45 (22 Nov, VATS head agent; user: "First vats test I did, nora had no head"): outside first person the player's whole
+    // head is shown. C35 / C39 restore only what FRIK hid (HeadHideCore never claims a node that was already culled), so a
+    // FaceGen node culled by anything else stayed hidden in the VATS playback / third person. Here, 10x a second while the
+    // camera is not first person (0/4) and not the free camera (3: fo4flatvr's AAF POV hide owns heads there), the player's
+    // BSFaceGenNiNodeSkinned node is un-culled. Only that node: its head parts (hair under a hat etc.) are the engine's.
+    // Off: fo4flatvr.ini [FRIK] bShowHeadOutsideFirstPerson=0 (live). Runs with or without a FRIK skeleton.
+    bool CullGeometryHandler::flatShowHeadOn()
+    {
+        return vrshim::bridge::iniIntLive("bShowHeadOutsideFirstPerson", 1) != 0;
+    }
+
+    void CullGeometryHandler::flatShowHeadOutsideFirstPerson(const int a_camState, const CullGeometryHandler* a_owner)
+    {
+        fo4flatvr::headhide::CullHook() = &vrshim::cull::Set;  // engine cull also before the first first-person frame
+        static std::chrono::steady_clock::time_point s_last{};
+        static int s_episodeFixes = 0;
+        static int s_lastCam = -99;
+        static std::uint64_t s_total = 0;
+        if (a_camState != s_lastCam) {
+            if (s_episodeFixes > 0) {
+                logger::info("FRIK-flat C45: camera state {} ended: the player's head was shown {} times in it (total {})", s_lastCam,
+                    s_episodeFixes, s_total);
+            }
+            s_lastCam = a_camState;
+            s_episodeFixes = 0;
+            s_last = {};
+        }
+        if (a_camState == 0 || a_camState == 4 || a_camState == 3 || !flatShowHeadOn()) {
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now - s_last < std::chrono::milliseconds(100)) {
+            return;
+        }
+        s_last = now;
+        const auto pl = RE::PlayerCharacter::GetSingleton();
+        auto* root = pl ? static_cast<RE::TESObjectREFR*>(pl)->Get3D(false) : nullptr;
+        auto* face = root ? root->GetObjectByName(RE::BSFixedString(fo4flatvr::headhide::kFaceNode)) : nullptr;
+        if (!face || !(face->flags.flags & 1)) {
+            return;
+        }
+        fo4flatvr::headhide::SetCulled(face, false);
+        ++s_total;
+        if (s_episodeFixes++ < 3) {
+            logger::info("FRIK-flat C45: camera state {} (not first person): the player's FaceGen head @{} was culled ({}) - shown "
+                         "again (#{} in this state; [FRIK] bShowHeadOutsideFirstPerson)", a_camState, static_cast<void*>(face),
+                a_owner && a_owner->_flatHead.Contains(face) ? "still in C39's hide set" : "not by C39: its hide set does not hold it",
+                s_episodeFixes);
+        }
+    }
 
     /// <summary>
     /// Show all player geometries and equipment slots.
@@ -189,7 +243,7 @@ namespace frik
         //Face and Skin
         if (const auto rn = reinterpret_cast<RE::BSFadeNode*>(f4vr::getWorldRootNode())) {
             for (auto& i : rn->geomArray) {
-                f4vr::setNodeVisibility(i.geometry.get(), true);
+                RE::NiNodeUtils::SetVisible(i.geometry.get(), true);
             }
         }
     }
@@ -236,6 +290,6 @@ namespace frik
             return;
         }
 
-        f4vr::setNodeVisibility(slot.partClone.get(), !toHide);
+        RE::NiNodeUtils::SetVisible(slot.partClone.get(), !toHide);
     }
 }

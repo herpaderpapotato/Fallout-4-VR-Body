@@ -40,6 +40,24 @@ namespace RE
     static_assert(sizeof(BSEffectShaderMaterial) == 0xC0);
     static_assert(offsetof(BSEffectShaderMaterial, baseColor) == 0x48);
 
+    // C46: CommonLibF4VR RE/Bethesda/Actor.h MuzzleFlash (the flat lib only forward-declares it). Same layout as the
+    // port's earlier f4vr::MuzzleFlash (fireNode 0x10 -> flash3D, projectileNode 0x18 -> fireNode); only the head is
+    // declared, it is only ever used through EquippedWeaponData::muzzleFlash.
+    class MuzzleFlash
+    {
+    public:
+        std::uint16_t         unk00;           // 00
+        std::uint8_t          unk02;           // 02
+        float                 unk04;           // 04
+        float                 unk08;           // 08
+        std::uint32_t         unk0C;           // 0C
+        NiPointer<NiNode>     flash3D;         // 10 - the flash's own 3D, placed at fireNode
+        NiPointer<NiNode>     fireNode;        // 18 - the projectile's fire node, where the weapon fires from
+        NiPointer<NiAVObject> unk20;           // 20
+        BGSProjectile*        projectileBase;  // 28
+    };
+    static_assert(offsetof(MuzzleFlash, flash3D) == 0x10 && offsetof(MuzzleFlash, fireNode) == 0x18);
+
     namespace BSGraphics
     {
         // Completes the flat lib's forward declaration. Layout = CommonLibF4VR's (srv first); the renderer texture

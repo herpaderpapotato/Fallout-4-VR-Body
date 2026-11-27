@@ -32,6 +32,11 @@ namespace frik
         void flatHeadless(bool a_hide, const char* a_why);
 
         ~CullGeometryHandler() { _flatHead.Restore(); }
+
+        // C45 (22 Nov): outside first person (not the free camera 3) the player's FaceGen head node is never left culled.
+        // Called every FRIK frame from the C23 branch, with or without a skeleton (a_owner = the skeleton's handler or null).
+        static bool flatShowHeadOn();
+        static void flatShowHeadOutsideFirstPerson(int a_camState, const CullGeometryHandler* a_owner);
 #endif
 
         // the next cull finds the geometries to hide again instead of using the ones found in the last 2 seconds
@@ -59,6 +64,7 @@ namespace frik
         fo4flatvr::headhide::Set _flatHead;
         std::chrono::steady_clock::time_point _flatHeadScan{};
         bool _flatHeadNoFaceLogged = false;
+        std::size_t _flatHeadLogged = 0;
 #endif
     };
 }

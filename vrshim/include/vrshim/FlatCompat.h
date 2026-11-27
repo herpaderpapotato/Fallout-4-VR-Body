@@ -270,3 +270,5 @@ namespace RE::BSGraphics
         static RendererData* GetSingleton() { return GetRendererData(); }
     };
 }
+
+#include "vrshim/ClibVrCompat.h"  // C46: CommonLibF4VR 0.6 names (NiNodeUtils, VRSettings) -> fw-src/f4vr

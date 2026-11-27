@@ -13,6 +13,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,32 @@ namespace fo4flatvr::headhide
     // head biped slots FRIK hides (CullGeometryHandler::restoreEquipment): hair top/long, FaceGen head, headband, eyes, beard,
     // mouth, neck, scalp
     inline constexpr int kHeadSlots[] = { 0, 1, 2, 16, 17, 18, 19, 20, 22 };
+
+    // 22 Nov (VATS head agent): culls go through the engine's NiAVObject::SetAppCulled (vtable 0x2D, flat 16C86C0). Besides bit 0
+    // it sets 0x20000000 on the node and on every parent up to one that already has it - the engine's "changed below" mark.
+    // Flipping bit 0 directly (as this file did) left that mark unset: after a first-person hide, the head shown again for a
+    // VATS playback was un-culled but not drawn (measured: bone matrices not built for the whole playback; with the hide off it
+    // drew).
+    // The cull call each DLL installs: FRIK-flat vrshim::cull::Set, fo4flatvr enginecull::Set (both: bit 0 at once + the engine's
+    // SetAppCulled on the main thread, [FRIK] bEngineCullFlag). Not installed: the direct bit.
+    using CullFn = void (*)(RE::NiAVObject*, bool);
+    inline CullFn& CullHook()
+    {
+        static CullFn s_fn = nullptr;
+        return s_fn;
+    }
+
+    inline void SetCulled(RE::NiAVObject* a_o, bool a_culled)
+    {
+        if (!a_o) return;
+        if (auto fn = CullHook()) {
+            fn(a_o, a_culled);
+        } else if (a_culled) {
+            a_o->flags.flags |= 1;
+        } else {
+            a_o->flags.flags &= ~static_cast<std::uint64_t>(1);
+        }
+    }
 
     inline bool HeadName(const char* a_name)
     {
@@ -75,7 +102,7 @@ namespace fo4flatvr::headhide
         void Keep()
         {
             for (auto& o : _culled) {
-                if (o) o->flags.flags |= 1;
+                if (o && !(o->flags.flags & 1)) SetCulled(o.get(), true);
             }
         }
 
@@ -83,7 +110,7 @@ namespace fo4flatvr::headhide
         std::size_t Restore()
         {
             for (auto& o : _culled) {
-                if (o) o->flags.flags &= ~static_cast<std::uint64_t>(1);
+                if (o) SetCulled(o.get(), false);
             }
             const auto n = _culled.size();
             _culled.clear();
@@ -91,6 +118,25 @@ namespace fo4flatvr::headhide
         }
 
         std::size_t Size() const { return _culled.size(); }
+
+        // 22 Nov: what the set holds, for the logs ("'name'@ptr, ...", first a_max)
+        std::string Names(std::size_t a_max = 6) const
+        {
+            std::string s;
+            for (std::size_t i = 0; i < _culled.size() && i < a_max; ++i) {
+                const auto& o = _culled[i];
+                char buf[32];
+                std::snprintf(buf, sizeof(buf), "@%p", static_cast<const void*>(o.get()));
+                s += (i ? ", '" : "'") + std::string(o && o->name.c_str() ? o->name.c_str() : "") + "'" + buf;
+            }
+            if (_culled.size() > a_max) s += ", ...";
+            return s;
+        }
+
+        bool Contains(const RE::NiAVObject* a_o) const
+        {
+            return std::any_of(_culled.begin(), _culled.end(), [&](const auto& o) { return o.get() == a_o; });
+        }
         bool        Empty() const { return _culled.empty(); }
 
     private:
@@ -99,7 +145,7 @@ namespace fo4flatvr::headhide
             if (!o || (o->flags.flags & 1)) {
                 return;  // already culled (by the game, FRIK or another mod): never ours to show again
             }
-            o->flags.flags |= 1;
+            SetCulled(o, true);
             _culled.emplace_back(o);
         }
 

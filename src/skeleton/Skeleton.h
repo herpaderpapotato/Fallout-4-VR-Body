@@ -58,7 +58,7 @@ namespace frik
          */
         RE::NiNode* getWeaponOffsetNode(const bool isLeft) const
         {
-            return (f4vr::isLeftHandedMode() ^ isLeft) ? _playerNodes->secondaryMeleeWeaponOffsetNode : _playerNodes->primaryWeaponOffsetNode;
+            return (RE::VRSettings::IsLeftHandedMode() ^ isLeft) ? _playerNodes->secondaryMeleeWeaponOffsetNode : _playerNodes->primaryWeaponOffsetNode;
         }
 
         /**
@@ -115,6 +115,7 @@ namespace frik
         {
             _cullGeometry.restoreAll();
         }
+        const CullGeometryHandler* cullGeometry() const { return &_cullGeometry; }  // C45 log: is a culled head in C39's set
 #endif
 
         void onFrameUpdate();
@@ -215,6 +216,58 @@ namespace frik
         void  flatBodyWrittenZ();
         // C39: FRIK's leg IK with skeleton-mod offset bones between thigh/calf/foot (setSingleLeg)
         void setSingleLegChain(bool isLeft) const;
+        // C42: VRIK-style legs (Skeleton.cpp "C42"): the engine's locomotion animation drives the feet while moving, world-planted
+        // feet with short procedural steps while standing; FRIK's IK solves the legs to them. [FRIK] bAnimatedLegs (live)
+        static bool flatAnimatedLegsOn();
+        bool        flatCaptureAnimLegs();
+        void        flatAnimatedLegs();
+        void        flatAnimLegsDiag();
+        void        flatStartStep(int a_foot, const std::array<RE::NiPoint3, 2>& a_tgt, float a_scale);
+        bool                           _flatAnimLegs = false;  // this frame's legs come from flatAnimatedLegs
+        bool                           _flatAnimLegsPrev = false;  // ... and the previous frame's (a switch starts fresh)
+        const void*                    _flatLegIdxTree = nullptr;
+        std::array<int, 4>             _flatLegIdx = { -1, -1, -1, -1 };  // tree index: L thigh, L foot, R thigh, R foot
+        std::array<RE::NiTransform, 4> _flatAnimRel{};                     // their animated pose in the actor (tree node) frame
+        RE::NiTransform                _flatPrevEng[3]{};                  // diag: last frame's engine local of L foot, L thigh, COM
+        std::array<RE::NiPoint3, 2>    _flatPole{};                        // knee pole (animated thigh axis), world
+        std::array<RE::NiMatrix3, 2>   _flatFootRot{};                     // foot world rotation to keep after the solve
+        bool                           _flatFootRotValid = false;
+        // standing: world-planted feet and the step in progress
+        bool                         _flatPlantedValid = false;
+        std::array<RE::NiPoint3, 2>  _flatPlanted{};
+        std::array<RE::NiMatrix3, 2> _flatPlantedRot{};
+        int                          _flatStepFoot = -1;
+        float                        _flatStepT = 0.0f, _flatStepDur = 0.3f, _flatStepLift = 1.0f;
+        RE::NiPoint3                 _flatStepStart{};
+        RE::NiMatrix3                _flatStepStartRot{};
+        float                        _flatLegYaw = 0.0f;  // heading of the step targets (dead zone around the body heading)
+        bool                         _flatLegYawValid = false, _flatLegYawTurning = false;
+        RE::NiPoint3                 _flatAnchor{};       // standing: root x/y the step targets hang from (lean dead band)
+        bool                         _flatAnchorRecentring = false;
+        bool                         _flatMoving = false;
+        float                        _flatMoveHold = 0.0f;   // seconds the animated feet stay after the movement stops
+        float                        _flatAnimBlend = 1.0f;  // planted -> animated blend at a movement start
+        float                        _flatStrideYaw = 0.0f;  // C43: holstered strafe / back - stride turned to the move direction (rad)
+        std::array<RE::NiPoint3, 2>  _flatOut{};             // this frame's foot targets (world)
+        std::array<RE::NiMatrix3, 2> _flatOutRot{};
+        // C42 diag window (FRIK.log `FRIK-flat C42 legs:` every 2 s)
+        struct FlatLegDiag
+        {
+            int   frames = 0, moving = 0, steps = 0, plantedFrames = 0;
+            float footErrMax[2] = { 0, 0 };     // |solved foot - target| after the IK
+            float plantSlideMax = 0.0f;         // planted position change per frame (not stepping)
+            float plantFootMoveMax = 0.0f;      // solved planted foot world move per frame (not stepping)
+            float animMin[2][2] = { { 1e9f, 1e9f }, { 1e9f, 1e9f } }, animMax[2][2] = { { -1e9f, -1e9f }, { -1e9f, -1e9f } };  // standing: animated foot x/y range (actor frame)
+            float capErr = -1.0f;               // composed engine foot vs the frame-start tree world (tree-relative)
+            float mvMin[3] = { 1e9f, 1e9f, 1e9f }, mvMax[3] = { -1e9f, -1e9f, -1e9f };  // moving: animated L foot x/y/z range (actor frame)
+            int   engChanged = 0, engFrames = 0;  // frames where the engine's L foot / L thigh / COM local changed since the previous frame
+            int   thighChanged = 0, comChanged = 0;
+            float yawErrMax = 0.0f;
+            float strideYawMax = 0.0f;  // C43: largest holstered stride turn this window (rad)
+            std::uint32_t moveBits = 0, moveBitsOr = 0;
+        } _flatLegDiag;
+        std::array<RE::NiPoint3, 2> _flatPrevSolvedFoot{};
+        std::array<bool, 2>         _flatPrevPlanted = { false, false };
 #endif
         ArmNodes _rightArm;
         ArmNodes _leftArm;

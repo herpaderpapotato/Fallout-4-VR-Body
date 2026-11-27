@@ -1,13 +1,13 @@
 -- FRIK-flat: FRIK (Fallout 4 VR Body) + the parts of F4VR-CommonFramework it uses, built against the flat
 -- CommonLibF4 (extern/commonlibf4, Fallout 4 1.11.240) for the fo4flatvr feasibility build.
--- Design and change log: analysis/frik-flat-port.md. Sources are copies of mods/Fallout-4-VR-Body (21b585c1)
--- and mods/F4VR-CommonFramework (5677388); mods/ is never edited.
+-- Design and change log: analysis/frik-flat-port.md. Sources are copies of mods/Fallout-4-VR-Body (3d79219e, synced 27 Nov 2026)
+-- and its F4VR-CommonFramework submodule (14a76b94; game-RE layer kept from 5677388, see C46); mods/ is never edited.
 --
 -- Separate xmake project (own .xmake/ and build/), so it never touches the plugin's build:
 --   cd frik-flat && python -I tools/gen.py && xmake f -m releasedbg -y && xmake build FRIK
 set_xmakever("3.0.0")
 set_project("frik-flat")
-set_version("0.80.1")
+set_version("0.80.3")
 set_allowedplats("windows")
 set_defaultplat("windows")
 set_arch("x64")
