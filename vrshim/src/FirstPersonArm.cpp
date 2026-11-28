@@ -83,7 +83,9 @@ namespace vrshim
             }
             if (s_idx < 0 || !tree->bone[s_idx].node) return false;
             a_out = vrshim::xf::FromNi(tree->bone[s_idx].node->world);
-            a_out.t = a_out.t + vrshim::xf::V{ a_pc->data.location.x, a_pc->data.location.y, a_pc->data.location.z };
+            float off[3]{};
+            if (!vrshim::firstPersonRigToWorldOffset(a_pc, off)) return false;
+            a_out.t = a_out.t + vrshim::xf::V{ off[0], off[1], off[2] };
             return true;
         }
 
@@ -97,6 +99,15 @@ namespace vrshim
     namespace
     {
         void* place(const RE::PlayerCharacter* a_pc, RE::NiNode* weapon, RE::NiNode* offset);
+    }
+
+    bool firstPersonRigToWorldOffset(const RE::PlayerCharacter* a_pc, float a_out[3])
+    {
+        if (!a_pc || !a_out) return false;
+        a_out[0] = a_pc->data.location.x;
+        a_out[1] = a_pc->data.location.y;
+        a_out[2] = a_pc->data.location.z;
+        return true;
     }
 
     void* update1stPersonArm(const RE::PlayerCharacter* a_pc, RE::NiNode** a_weapon, RE::NiNode** a_offset)

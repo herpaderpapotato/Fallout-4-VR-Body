@@ -46,7 +46,10 @@
 // v9 (22 Nov, engine cull): RunOnMain - queue a_fn(a_ctx) on fo4flatvr's main-thread queue (tq::RunOnMain: OnIdle C34794,
 // after the frame's job threads). FRIK-flat routes its node hides / shows (NiAVObject::SetAppCulled, which also marks every
 // parent changed - shared scene-graph nodes) through it. Returns 1 = queued, 0 = not (the caller runs it itself).
-#define FO4FLATVR_FRIK_BRIDGE_VERSION 9u
+// v10 (28 Nov, ROCK-flat R30): SetInputAdds - the presses a client's remap adds (ControllerBindings.h SetAdds).
+// v11 (28 Nov, ROCK-flat R32): SetPreFrameCallback - the graph-output point before the floating gun (NativeGraphOutput).
+// v12 (28 Nov, ROCK-flat R35): SetKickCallback - the floating gun's FO4VR kickback goes through FRIK's recoil controllers.
+#define FO4FLATVR_FRIK_BRIDGE_VERSION 13u
 #define FO4FLATVR_FRIK_BRIDGE_MIN_VERSION 3u
 
 #ifdef __cplusplus
@@ -100,6 +103,14 @@ typedef struct FO4FlatVR_Frame
 // Also, while the game is paused (UI::menuMode != 0: no player update), once per frame from Main::OnIdle C33E62 on the main
 // thread (FO4VR's own FRIK slot; [FRIK] bPausedFrame=1, never in the same frame as the C351F3 call). Must not throw.
 typedef void (*FO4FlatVR_FrameCallback)(void* a_ctx);
+// v12: kick callback. FO4VR's engine writes the weapon kickback (translation (0, -d, 0) + the aim model's recoil rotation)
+// into PrimaryWeaponKickbackRecoilNode's local (child of PrimaryWeaponToWandNode = wand . T(0,-4,1)) and FRIK offers that
+// local to its recoil controllers (ROCK). On flat fo4flatvr's floating gun computes the same kick; once per placed frame,
+// BEFORE it places the weapon (player-update job thread, before FRIK's frame callback), it calls this with a_kick = that
+// local as an NiTransform (16 floats: 3 rows of 4 (rotation, CommonLib NiMatrix3 layout), translate xyz, scale 1).
+// Return 0 = nobody controls it: the gun applies a_kick itself. Return 1 = a controller took it: a_out (same layout) is the
+// kick the gun applies instead (identity = none: the controller delivers it through its own weapon pose, or recoil is off).
+typedef uint8_t (*FO4FlatVR_KickCallback)(void* a_ctx, const float a_kick[16], float a_out[16]);
 
 // v3: camera offset (FRIK smooth movement). Called by fo4flatvr once per first-person camera update (the thread running
 // FirstPersonState::Update, before the camera position is built; the player's position for this frame is final). Writes the
@@ -177,6 +188,22 @@ typedef struct FO4FlatVR_FrikBridge
     uint8_t (*SetInputClaims)(uint32_t a_owner, uint32_t a_left, uint32_t a_right);
     // v9: run a_fn(a_ctx) on the main thread (queued; any thread may call). 1 = queued.
     uint8_t (*RunOnMain)(void (*a_fn)(void*), void* a_ctx);
+    // v10: input adds of one owner (any thread, cheap; call when the set changes). a_left / a_right = FO4FLATVR_CLAIM_* bits
+    // the game should see PRESSED on that physical hand although they are not (a client's remap: ROCK's left-hand fire
+    // presents the physical left trigger as the right trigger; its button layout moving an action). Same contexts and switch
+    // as the claims (gameplay / quick loot, [ROCK] bInputClaims). Returns 1 when honoured now.
+    uint8_t (*SetInputAdds)(uint32_t a_owner, uint32_t a_left, uint32_t a_right);
+    // v11: pre-frame callback (null clears): called at the same C351F3 player-update call as SetFrameCallback's, but FIRST -
+    // before the floating gun and the original notify move the first-person rig - so the client sees the engine's own
+    // animation-graph output of this frame (FRIK-flat fires FRIK's NativeGraphOutput phase from it). Player-update job
+    // thread; not called in pause-time frames. Returns 1 when the C351F3 hook is installed.
+    uint8_t (*SetPreFrameCallback)(FO4FlatVR_FrameCallback a_cb, void* a_ctx);
+    // v12: kick callback (null clears; see FO4FlatVR_KickCallback). Returns 1 when the floating gun will call it now
+    // ([ROCK] bRecoilControl=1, live); 0 = stored but not called (switch off).
+    uint8_t (*SetKickCallback)(FO4FlatVR_KickCallback a_cb, void* a_ctx);
+    // v13 (28 Nov, ROCK-flat R50): fo4flatvr's input context of the last mapped frame (ControllerBindings.h InputContext:
+    // 0 gameplay, 1 quick loot, 2 Pip-Boy, 3 quick menu, 4 V.A.T.S., 5 workshop, 6 lockpick, 7 dialogue, 8 other menu). Any thread.
+    uint8_t (*GetInputContext)(void);
 } FO4FlatVR_FrikBridge;
 
 // v8 input claim bits (per physical hand)

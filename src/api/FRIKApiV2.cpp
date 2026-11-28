@@ -474,3 +474,8 @@ extern "C" __declspec(dllexport) void* FRIKFLAT_GetVRPlayerNodes() { return vrsh
 extern "C" __declspec(dllexport) std::uint8_t FRIKFLAT_VrNodesReady() { return vrshim::vrNodesCreated() ? 1 : 0; }
 extern "C" __declspec(dllexport) std::uint8_t FRIKFLAT_PausedFrame() { return vrshim::bridge::pausedFrame() ? 1 : 0; }
 extern "C" __declspec(dllexport) std::uint64_t FRIKFLAT_FrameCount() { return vrshim::bridge::frameCount(); }
+// FRIK-flat C47 (28 Nov, ROCK-flat R27): the first-person rig -> absolute world offset (vrshim::firstPersonRigToWorldOffset).
+extern "C" __declspec(dllexport) std::uint8_t FRIKFLAT_GetFirstPersonRigOffset(float* a_out)
+{
+    return vrshim::firstPersonRigToWorldOffset(RE::PlayerCharacter::GetSingleton(), a_out) ? 1 : 0;
+}

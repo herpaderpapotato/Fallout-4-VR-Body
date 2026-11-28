@@ -30,6 +30,10 @@ typedef uint8_t (*FRIKFLAT_PausedFrame_t)(void);
 // FRIK-flat frames run so far (incremented at each frame begin, paused frames included). Game thread.
 typedef uint64_t (*FRIKFLAT_FrameCount_t)(void);
 
+// C47 (28 Nov): flat's first-person rig is player-relative; absolute world = rig world + a_out[0..2] (translation only).
+// 1 = written. FRIK-flat's own rig -> world conversions use the same helper. Game thread (FRIK's frame).
+typedef uint8_t (*FRIKFLAT_GetFirstPersonRigOffset_t)(float* a_out);
+
 #ifdef __cplusplus
 }
 #endif

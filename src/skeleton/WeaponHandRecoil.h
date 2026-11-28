@@ -26,6 +26,16 @@ namespace frik
     public:
         void onFrameUpdate(RE::VRPlayerNodes* playerNodes, bool physicalPrimaryIsLeft);
 
+#ifdef FRIK_FLAT
+        /**
+         * C50 (bridge v12): fo4flatvr's floating gun hands over this frame's kick (FO4VR's kickback-node local) before it
+         * places the weapon. The stand-in kick node gets it and the frame is resolved here (the controllers see it as on
+         * FO4VR); onFrameUpdate later this frame keeps that resolution. Returns false = no controller: the gun kicks itself;
+         * true = outGunKick is what the gun applies (the controlled kick it delivers for the primary hand, else identity).
+         */
+        bool preResolveFlatGunKick(RE::VRPlayerNodes* playerNodes, bool physicalPrimaryIsLeft, const RE::NiTransform& gunKick, RE::NiTransform& outGunKick);
+#endif
+
         /**
          * Return whether a controller accepted ownership of this frame's recoil.
          * False means the hands keep the native kick the game already animated.
@@ -60,7 +70,12 @@ namespace frik
         };
 
     private:
+        void resolveFrame(RE::VRPlayerNodes* playerNodes, bool physicalPrimaryIsLeft);
         RE::NiTransform dampen(const RE::NiTransform& kick);
+#ifdef FRIK_FLAT
+        bool _flatPreResolved = false;         // C50: resolved from the gun's kick this frame
+        std::uint32_t _flatGunFramesSinceFrame = 0;  // gun kicks offered since FRIK's last onFrameUpdate (FRIK frame alive?)
+#endif
         bool buildWorldDelta(bool isLeft, RE::NiTransform& outWorldDelta) const;
 
         RE::VRPlayerNodes* _playerNodes = nullptr;

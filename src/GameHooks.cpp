@@ -7,6 +7,9 @@
 #include "FRIK.h"
 #include "api/ApiCore.h"
 #include "perf/Perf.h"
+#ifdef FRIK_FLAT
+#include "vrshim/Bridge.h"
+#endif
 
 namespace
 {
@@ -175,6 +178,41 @@ namespace
         F4SE::GetTrampoline().write_call<5>(address, &hookPlayerPostAnimGraph);
         logger::info("Detoured body pose reset at 0x{:X} to the NativeGraphOutput phase", address);
     }
+
+#ifdef FRIK_FLAT
+    /**
+     * FRIK-flat C48: flat has no VR body-pose-reset vfunc (F2F0A0) to detour, so the NativeGraphOutput phase comes from
+     * fo4flatvr's bridge v11 pre-frame callback: the same player-update call (C351F3) as FRIK's frame, before the floating
+     * gun moves the first-person rig - the engine's own animation-graph output of this frame. Off with fo4flatvr < v11.
+     */
+    void registerFlatGraphOutputPhase()
+    {
+        const bool ok = vrshim::bridge::registerPreFrame([](void*) { hookPlayerPostAnimGraph(0); }, nullptr);
+        logger::info("FRIK-flat C48: NativeGraphOutput phase from fo4flatvr's pre-frame callback: {}", ok ? "on" : "OFF (fo4flatvr bridge < v11)");
+    }
+
+    /**
+     * FRIK-flat C50: FO4VR's engine writes the weapon kick into PrimaryWeaponKickbackRecoilNode and FRIK samples it for its recoil
+     * controllers (ROCK). On flat fo4flatvr's floating gun computes that kick and offers it here (bridge v12) before it places the
+     * weapon: the stand-in kick node gets it, the controllers resolve it, and the gun applies what they leave to it.
+     */
+    void registerFlatGunKick()
+    {
+        const bool ok = vrshim::bridge::registerKick(
+            [](void*, const float* a_in, float* a_out) -> std::uint8_t {
+                RE::NiTransform in, out;
+                static_assert(sizeof(RE::NiTransform) == 16 * sizeof(float));
+                std::memcpy(&in, a_in, sizeof(in));
+                if (!frik::g_frik.filterFlatGunKick(in, out)) {
+                    return 0;
+                }
+                std::memcpy(a_out, &out, sizeof(out));
+                return 1;
+            },
+            nullptr);
+        logger::info("FRIK-flat C50: floating-gun kick to FRIK's recoil controllers: {}", ok ? "on" : "OFF (fo4flatvr bridge < v12 or [ROCK] bRecoilControl=0)");
+    }
+#endif
 }
 
 namespace
@@ -319,6 +357,10 @@ namespace frik::hook
         replacePrimaryWandNif();
 
         detourResetBodyPose();
+#ifdef FRIK_FLAT
+        registerFlatGraphOutputPhase();
+        registerFlatGunKick();
+#endif
 
         auto& trampoline = F4SE::GetTrampoline();
         if (verifyCallSite("mainUpdatePlayer", f4vr::hook_MainUpdatePlayer.address(), f4vr::main_update_player.address())) {

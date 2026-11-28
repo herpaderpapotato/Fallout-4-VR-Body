@@ -105,6 +105,61 @@ namespace frik
      */
     void WeaponHandRecoil::onFrameUpdate(RE::VRPlayerNodes* playerNodes, const bool physicalPrimaryIsLeft)
     {
+#ifdef FRIK_FLAT
+        _flatGunFramesSinceFrame = 0;
+        if (_flatPreResolved) {
+            // C50: resolved from the floating gun's kick before it placed the weapon this frame (preResolveFlatGunKick)
+            _flatPreResolved = false;
+            _playerNodes = playerNodes;
+            _worldDeltaValid.fill(false);
+            return;
+        }
+        // no gun kick this frame (paused frame, gun not placing, melee): the stand-in kick node carries none
+        if (auto* const kick = playerNodes ? playerNodes->primaryWeaponKickbackRecoilNode : nullptr) {
+            const auto& r = kick->local.rotate.entry;
+            if (kick->local.translate.x != 0.0f || kick->local.translate.y != 0.0f || kick->local.translate.z != 0.0f || r[0][0] != 1.0f ||
+                r[1][1] != 1.0f || r[2][2] != 1.0f) {
+                kick->local.MakeIdentity();
+                RE::NiNodeUtils::UpdateTransformsDown(kick, true);
+            }
+        }
+#endif
+        resolveFrame(playerNodes, physicalPrimaryIsLeft);
+    }
+
+#ifdef FRIK_FLAT
+    bool WeaponHandRecoil::preResolveFlatGunKick(RE::VRPlayerNodes* playerNodes, const bool physicalPrimaryIsLeft, const RE::NiTransform& gunKick,
+        RE::NiTransform& outGunKick)
+    {
+        _flatPreResolved = false;
+        auto* const kick = playerNodes ? playerNodes->primaryWeaponKickbackRecoilNode : nullptr;
+        // only while FRIK's frame runs (its controllers deliver what they take inside it)
+        if (!kick || !isFiniteTransform(gunKick) || ++_flatGunFramesSinceFrame > 2) {
+            return false;
+        }
+        kick->local = gunKick;
+        RE::NiNodeUtils::UpdateTransformsDown(kick, true);
+        resolveFrame(playerNodes, physicalPrimaryIsLeft);
+        _flatPreResolved = true;
+        if (!_responseAccepted) {
+            return false;
+        }
+        // On flat the gun is not under the hand: the primary hand follows the gun (vrshim C29), so a kick the controller asks
+        // FRIK to deliver to the primary hand is delivered by the gun instead, and FRIK must not add it to the hand again.
+        // Owned delivery (mask without Primary) and EmergencyDisableRecoil (mask 0): the gun applies none.
+        constexpr auto primary = static_cast<std::uint32_t>(api::core::RecoilHandMask::Primary);
+        if (_handMask & primary) {
+            outGunKick = _controlledKickLocal;
+            _handMask &= ~primary;
+        } else {
+            outGunKick.MakeIdentity();
+        }
+        return true;
+    }
+#endif
+
+    void WeaponHandRecoil::resolveFrame(RE::VRPlayerNodes* playerNodes, const bool physicalPrimaryIsLeft)
+    {
         _playerNodes = playerNodes;
         _physicalPrimaryIsLeft = physicalPrimaryIsLeft;
 

@@ -472,6 +472,7 @@ C346AC).
   defined in `frik-src/api/FRIKApiV2.cpp`): `FRIKFLAT_GetVRPlayerNodes` (the flat VR node table, FO4VR's player+0x6E0),
   `FRIKFLAT_VrNodesReady`, `FRIKFLAT_PausedFrame`, `FRIKFLAT_FrameCount`, `FRIKFLAT_GetHostExportsVersion`. Bridge header v8
   (input claims, fo4flatvr side only; FRIK.dll asks v8 first). Built FRIK.dll 00:32:06, not deployed (hold).
+- 2026-11-28 00:20 (ROCK agent, minimal): C47 `vrshim::firstPersonRigToWorldOffset` (FlatCompat.h, FirstPersonArm.cpp): the one rig -> world helper (translation = player location); GunWeaponWorld uses it; exported as `FRIKFLAT_GetFirstPersonRigOffset` (FrikFlatExports.h) for ROCK-flat's shadow weapon (R27). Same math as before. Built 00:20 (candidate, not deployed: work/deploy-backup/FRIK.dll.candidate-20261128-0020).
 - 2026-11-27 20:45: upstream sync to FRIK 3d79219e (v0.80.3) + F4VR-CommonFramework 14a76b94. Three-way merge against the
   copied bases (21b585c1 / 5677388); every FRIK_FLAT edit kept. Taken: FRIK API v2.5 (isWeaponRepositionModeOpen,
   getWeaponOffset + Config::lookupWeaponOffsets), Mods Config override owners (framework config/Overrides, modsconfig client,
@@ -481,3 +482,5 @@ C346AC).
   SetAppCulled path), `RE::SkeletonBones` = f4vr::SkellyBones, RE::MuzzleFlash completed in FlatTypes.h. CommonLibF4VR member
   calls the flat lib lacks (PlayerCharacter::GetBoneTree / SetRestrained / wand nodes / TogglePipBoyLight, BSFadeNode members)
   stay on the f4vr calls. Pre-sync sources: work/deploy-backup/frik-flat-src-pre-sync-20261127.
+- 2026-11-28 02:20 (ROCK agent 2): C48 NativeGraphOutput phase on flat from fo4flatvr bridge v11 SetPreFrameCallback (GameHooks.cpp registerFlatGraphOutputPhase; vrshim bridge registerPreFrame): the C351F3 call before the floating gun = the engine's graph output (the VR body-pose-reset vfunc F2F0A0 has no flat address). C49: Skeleton's left-handed weapon-node re-parent is not applied on stand-in hands (it crashed UpdateTransformsDown in placeFirstPersonArm when ROCK requested a left-firing re-parent). FRIK.dll 0c62f6106b56 deployed with ROCK 47e8ebecf559.
+- 2026-11-28 03:05 (ROCK agent 3): C50 floating-gun kick through FRIK's recoil controllers (fo4flatvr bridge v12 SetKickCallback; GameHooks.cpp registerFlatGunKick -> FRIK::filterFlatGunKick -> WeaponHandRecoil::preResolveFlatGunKick): the stand-in PrimaryWeaponKickbackRecoilNode gets the gun's kick, the frame is resolved before the gun places the weapon (onFrameUpdate keeps that resolution), a primary-hand delivery goes onto the gun (the stand-in hand follows the gun, C29) and is not added to the hand again. Without a gun kick this frame the stand-in node is reset to identity. FRIK.dll 0957fae0405b deployed with ROCK 12fe51230181.

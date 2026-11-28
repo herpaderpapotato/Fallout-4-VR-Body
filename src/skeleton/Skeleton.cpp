@@ -1889,6 +1889,20 @@ namespace frik
             logger::sample("Cannot set up weapon nodes for left-handed mode switch");
             return;
         }
+#ifdef FRIK_FLAT
+        // C49: on flat the hands FRIK drives are vrshim stand-ins, not the engine's first-person arm bones, and the rig's
+        // Weapon is a BSFlattenedBoneTree bone. Re-parenting it between the stand-in hands crashed the next arm pass
+        // (UpdateTransformsDown, ROCK-flat r32a / r32b, ROCK's left-firing request). Not applied on flat: an external owner
+        // (ROCK's left-firing carry) places the weapon itself.
+        if (vrshim::fpHands().standIn) {
+            if (_lastLeftHandedModeSwitch != effectiveLeftHanded) {
+                logger::warn("FRIK-flat C49: left-handed weapon-node re-parent not applied on flat (stand-in hands); EffectiveLeftHanded:{}",
+                    effectiveLeftHanded);
+            }
+            _lastLeftHandedModeSwitch = effectiveLeftHanded;
+            return;
+        }
+#endif
 
         _lastLeftHandedModeSwitch = effectiveLeftHanded;
         logger::warn("Left-handed mode weapon nodes switch (EffectiveLeftHanded:{}, GameSetting:{})", effectiveLeftHanded, RE::VRSettings::IsLeftHandedMode());

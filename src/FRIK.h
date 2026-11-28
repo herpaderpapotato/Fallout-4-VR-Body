@@ -40,6 +40,10 @@ namespace frik
             return _skelly.get();
         }
 
+#ifdef FRIK_FLAT // C50: bridge v12 kick callback (GameHooks.cpp registerFlatGunKick)
+        bool filterFlatGunKick(const RE::NiTransform& gunKick, RE::NiTransform& outGunKick);
+#endif
+
         WeaponPositionAdjuster* getWeaponPositionAdjuster() const
         {
             return _weaponPosition.get();

@@ -584,6 +584,14 @@ namespace frik
         }
     }
 
+#ifdef FRIK_FLAT // C50
+    // C50 (bridge v12): the floating gun's kick, before it places the weapon (player-update job thread, before FRIK's frame)
+    bool FRIK::filterFlatGunKick(const RE::NiTransform& gunKick, RE::NiTransform& outGunKick)
+    {
+        return _skelly && _skelly->filterFlatGunKick(isWeaponInLeftHand(), gunKick, outGunKick);
+    }
+#endif
+
 #ifdef FRIK_FLAT // C17
     /**
      * Flat: FO4VR steps SmoothMovementVR from Main::OnIdle (VR D83EC4 -> 1BA7BA0, which copies the OpenVR HMD pose into the

@@ -209,6 +209,14 @@ namespace vrshim::bridge
     {
         return g_api && g_api->SetFrameCallback && g_api->SetFrameCallback(a_cb, a_ctx) != 0;
     }
+    bool registerPreFrame(void (*a_cb)(void*), void* a_ctx) noexcept
+    {
+        return g_api && g_api->version >= 11u && g_api->SetPreFrameCallback && g_api->SetPreFrameCallback(a_cb, a_ctx) != 0;
+    }
+    bool registerKick(std::uint8_t (*a_cb)(void*, const float*, float*), void* a_ctx) noexcept
+    {
+        return g_api && g_api->version >= 12u && g_api->SetKickCallback && g_api->SetKickCallback(a_cb, a_ctx) != 0;
+    }
     bool bodyEnabled() noexcept
     {
         return g_api && g_api->BodyEnabled && g_api->BodyEnabled() != 0;

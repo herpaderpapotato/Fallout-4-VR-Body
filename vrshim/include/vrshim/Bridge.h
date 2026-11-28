@@ -33,6 +33,10 @@ namespace vrshim::bridge
 
     // Bridge v2: fo4flatvr calls a_cb once per game frame from its own hook at C351F3. False = no hook (stay frameless).
     bool registerFrame(void (*a_cb)(void*), void* a_ctx) noexcept;
+    // C48 (bridge v11): the pre-frame callback - fo4flatvr's C351F3 call before the floating gun (engine graph output).
+    bool registerPreFrame(void (*a_cb)(void*), void* a_ctx) noexcept;
+    // C50 (bridge v12): the floating gun's kick callback (FO4FlatVR_KickCallback; fo4flatvr [ROCK] bRecoilControl). False = older fo4flatvr or off.
+    bool registerKick(std::uint8_t (*a_cb)(void*, const float*, float*), void* a_ctx) noexcept;
 
     // C18 (body): PlayerWorldNode local z, the FO4VR camera lift (FRIK's HMD offset + smooth-movement z). FO4VR hangs the HMD
     // camera under PlayerWorldNode; on flat fo4flatvr builds the camera, so the node is posed here with this z (room = feet + z)

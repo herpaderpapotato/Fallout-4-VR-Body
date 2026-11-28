@@ -120,6 +120,14 @@ namespace frik
 
         void onFrameUpdate();
 
+#ifdef FRIK_FLAT // C50
+        // bridge v12: the floating gun's kick for this frame, before it places the weapon (WeaponHandRecoil::preResolveFlatGunKick)
+        bool filterFlatGunKick(const bool physicalPrimaryIsLeft, const RE::NiTransform& gunKick, RE::NiTransform& outGunKick)
+        {
+            return _weaponHandRecoil.preResolveFlatGunKick(_playerNodes, physicalPrimaryIsLeft, gunKick, outGunKick);
+        }
+#endif
+
 #ifdef FRIK_FLAT // C36
         // the body height FRIK fits the skeleton to (PlayerHeight): FRIK.toml's, or with [FRIK] bAutoBodyHeight=1 the camera's own
         // standing height (see Skeleton.cpp updateFlatBodyHeight)

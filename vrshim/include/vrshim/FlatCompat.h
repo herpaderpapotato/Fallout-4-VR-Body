@@ -248,6 +248,10 @@ namespace vrshim
 
     // C14: flat substitute for FO4VR's Update1StPersonArm (vrshim/src/FirstPersonArm.cpp)
     void* update1stPersonArm(const RE::PlayerCharacter* a_pc, RE::NiNode** a_weapon, RE::NiNode** a_offset);
+    // FRIK-flat C47 (28 Nov): flat's first-person rig (BSFlattenedBoneTree under firstPerson3D) lives in player-relative
+    // space; absolute world = rig world + this offset (translation only, the player's location). The one helper every
+    // rig -> world conversion uses (GunWeaponWorld; exported to ROCK-flat as FRIKFLAT_GetFirstPersonRigOffset).
+    bool firstPersonRigToWorldOffset(const RE::PlayerCharacter* a_pc, float a_out[3]);
 }
 
 // ---- C8: REL write helpers CommonLibF4VR has and the flat lib names differently
